@@ -37,7 +37,7 @@ function App() {
                 return { id: x.chunk_id, name: x.title, content: x.chunk };
             });
 
-            setGroundingFiles(prev => [...prev, ...files]);
+            setGroundingFiles(files);
         }
     });
 

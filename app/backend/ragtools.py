@@ -3,10 +3,10 @@ import logging
 import numpy as np
 import openai
 import asyncio
-from typing import Any
-from sklearn.metrics.pairwise import cosine_similarity
+from typing import Any, List, Dict
 
 from rtmt import RTMiddleTier, Tool, ToolResult, ToolResultDirection
+from rag_providers.base import BaseRAGProvider
 
 logger = logging.getLogger(__name__)
 
@@ -48,127 +48,93 @@ _grounding_tool_schema = {
     }
 }
 
-async def _search_tool(
-    openai_client: openai.OpenAI,
-    embedding_model: str,
-    all_metadata: list[dict],
-    all_vectors: np.ndarray,
-    args: Any) -> ToolResult:
-
+async def _execute_search(rag_provider: BaseRAGProvider, args: Any) -> ToolResult:
+    """Handles the 'search' tool call by delegating to the RAG provider."""
     query = args.get('query')
     if not query:
-        logger.error("Search tool called without a query.")
+        logger.error("Search tool called without a query argument.")
         return ToolResult("Error: Query parameter is missing.", ToolResultDirection.TO_SERVER)
 
-    logger.info(f"Searching in-memory for '{query}'...")
-
-    if all_vectors is None or len(all_metadata) == 0 or all_vectors.size == 0:
-         logger.warning("Search tool called but in-memory RAG index is not loaded or empty.")
-         return ToolResult("Knowledge base is not available.", ToolResultDirection.TO_SERVER)
-
     try:
-        # 1. Get query embedding using asyncio.to_thread for the sync SDK call
-        loop = asyncio.get_running_loop()
-        response = await loop.run_in_executor(
-            None, # Use default executor
-            lambda: openai_client.embeddings.create(
-                input=[query],
-                model=embedding_model
-            )
-        )
-        query_vector = np.array(response.data[0].embedding, dtype=np.float32).reshape(1, -1)
-        # Note: OpenAI embeddings (v2+) are pre-normalized to length 1
+        # Delegate search to the provider
+        search_results: List[Dict[str, Any]] = await rag_provider.search(query=query, top_k=5) # Use top_k=5 as before
 
-        # 2. Calculate cosine similarities
-        # Ensure vectors are compatible shapes
-        if query_vector.shape[1] != all_vectors.shape[1]:
-             logger.error(f"Query vector dimension ({query_vector.shape[1]}) does not match index dimension ({all_vectors.shape[1]}).")
-             return ToolResult("Error: Embedding dimension mismatch.", ToolResultDirection.TO_SERVER)
+        # Format results for the LLM
+        if not search_results:
+            result_text = "No relevant information found in the knowledge base."
+            logger.info(f"Search for '{query}' returned no results.")
+        else:
+            result_text = ""
+            for result in search_results:
+                chunk_id = result.get("chunk_id", "unknown_id")
+                text = result.get("text", "")
+                # Ensure the format matches what the LLM expects based on the prompt
+                result_text += f"[{chunk_id}]: {text}\n-----\n"
+            logger.info(f"Search for '{query}' returned {len(search_results)} results.")
 
-        similarities = cosine_similarity(query_vector, all_vectors)[0]
+        # Send formatted text result back to the server (LLM)
+        return ToolResult(result_text.strip(), ToolResultDirection.TO_SERVER)
 
-        # 3. Get top K results
-        K = 5 # Number of results to return
-        # Ensure K is not larger than the number of available vectors
-        actual_k = min(K, len(similarities))
-        if actual_k == 0:
-             return ToolResult("No results found in the knowledge base.", ToolResultDirection.TO_SERVER)
-
-        top_k_indices = np.argsort(similarities)[-actual_k:][::-1]
-
-        # 4. Format results
-        result_text = ""
-        for i in top_k_indices:
-            metadata = all_metadata[i]
-            score = similarities[i]
-            # Use chunk_id as the source identifier
-            result_text += f"[{metadata['chunk_id']}]: {metadata['text']}\n-----\n"
-            logger.info(f"  Found: {metadata['chunk_id']} (Score: {score:.4f})")
-
-        if not result_text:
-             result_text = "No relevant information found in the knowledge base."
-
-        return ToolResult(result_text, ToolResultDirection.TO_SERVER)
-
-    except openai.APIError as e:
-        logger.error(f"OpenAI API error during embedding query: {e}")
-        return ToolResult(f"Error reaching embedding service: {e}", ToolResultDirection.TO_SERVER)
     except Exception as e:
-        logger.exception(f"Error during in-memory search: {e}")
+        logger.exception(f"Error during search execution via RAG provider: {e}")
+        # Return a generic error message to the server
         return ToolResult(f"An internal error occurred during search.", ToolResultDirection.TO_SERVER)
 
-async def _report_grounding_tool(all_metadata: list[dict], args: Any) -> ToolResult:
-    sources_requested = args.get("sources", [])
-    logger.info(f"Grounding sources requested: {sources_requested}")
+async def _execute_grounding(rag_provider: BaseRAGProvider, args: Any) -> ToolResult:
+    """Handles the 'report_grounding' tool call by delegating to the RAG provider."""
+    source_ids = args.get("sources", [])
+    if not isinstance(source_ids, list):
+        logger.error(f"Grounding tool called with invalid 'sources' argument type: {type(source_ids)}")
+        return ToolResult({"sources": []}, ToolResultDirection.TO_CLIENT) # Send empty list to client
 
-    if not all_metadata:
-        logger.warning("Grounding tool called but no metadata loaded.")
+    logger.info(f"Grounding sources requested: {source_ids}")
+
+    if not source_ids:
+        # If model requests grounding for empty list, send empty list back
         return ToolResult({"sources": []}, ToolResultDirection.TO_CLIENT)
 
-    docs = []
-    # Create a quick lookup map for efficiency for potentially repeated calls
-    # Build it once if used frequently or just scan if metadata list is small
-    metadata_map = {item['chunk_id']: item for item in all_metadata}
+    try:
+        # Delegate detail retrieval to the provider
+        detailed_docs: List[Dict[str, Any]] = await rag_provider.get_details(chunk_ids=source_ids)
 
-    found_ids = set()
-    for source_id in sources_requested:
-        if source_id in metadata_map and source_id not in found_ids:
-            item = metadata_map[source_id]
-            docs.append({"chunk_id": item['chunk_id'], "title": item['title'], "chunk": item['text']})
-            found_ids.add(source_id)
-        else:
-             if source_id in found_ids:
-                 logger.debug(f"  Duplicate grounding source ID requested: {source_id}")
-             else:
-                 logger.warning(f"  Grounding source ID not found in metadata: {source_id}")
+        # Format the results for the client
+        # The provider's get_details should return data in the expected format
+        # {"chunk_id": ..., "title": ..., "chunk": ...}
+        logger.info(f"Grounding result contains {len(detailed_docs)} documents for client.")
 
-    logger.info(f"Grounding result contains {len(docs)} documents.")
-    # Send structured data to client
-    return ToolResult({"sources": docs}, ToolResultDirection.TO_CLIENT)
+        # Send structured data directly to the client
+        return ToolResult({"sources": detailed_docs}, ToolResultDirection.TO_CLIENT)
 
-def attach_rag_tools(rtmt: RTMiddleTier,
-    openai_client: openai.OpenAI,
-    embedding_model: str,
-    all_metadata: list[dict],
-    all_vectors: np.ndarray
+    except Exception as e:
+        logger.exception(f"Error during grounding execution via RAG provider: {e}")
+        # Send an empty list to the client in case of error
+        return ToolResult({"sources": []}, ToolResultDirection.TO_CLIENT)
+
+def attach_rag_tools(
+    rtmt: RTMiddleTier,
+    rag_provider: BaseRAGProvider # Accept a provider instance
     ) -> None:
+    """
+    Attaches RAG tools ('search', 'report_grounding') to the RTMiddleTier,
+    using the provided RAG provider for implementation.
+    """
 
-    # No Azure search client needed
-
-    # Check if data is actually present before attaching
-    if not all_metadata or all_vectors is None or all_vectors.size == 0:
-        logger.warning("Attempted to attach RAG tools, but index data is missing or empty. Skipping.")
+    if not isinstance(rag_provider, BaseRAGProvider):
+        logger.error(f"Invalid RAG provider passed to attach_rag_tools: {type(rag_provider)}. Tools not attached.")
         return
 
-    # Update lambda to pass new arguments correctly
+    # Attach search tool - lambda now calls _execute_search with the provider
     rtmt.tools["search"] = Tool(
         schema=_search_tool_schema,
-        target=lambda args: _search_tool(
-            openai_client, embedding_model, all_metadata, all_vectors, args
-        )
+        target=lambda args: _execute_search(rag_provider, args)
     )
+
+    # Attach grounding tool - lambda now calls _execute_grounding with the provider
     rtmt.tools["report_grounding"] = Tool(
          schema=_grounding_tool_schema,
-         target=lambda args: _report_grounding_tool(all_metadata, args)
+         target=lambda args: _execute_grounding(rag_provider, args)
     )
-    logger.info(f"Attached in-memory RAG tools ({len(all_metadata)} items).")
+
+    # Log the type of provider attached
+    provider_type_name = type(rag_provider).__name__
+    logger.info(f"Attached RAG tools using provider: {provider_type_name}")

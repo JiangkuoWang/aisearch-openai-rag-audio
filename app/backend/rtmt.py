@@ -192,11 +192,6 @@ class RTMiddleTier:
                              if self._pending_tool_calls[call_id].arguments_str == "":
                                  self._pending_tool_calls[call_id].arguments_str = arguments
 
-                             # Check if arguments are now complete and execute
-                             if self._pending_tool_calls[call_id].arguments_str is not None:
-                                await self._execute_tool_call(call_id, server_ws, client_ws)
-                             else:
-                                 logger.warning(f"Function call item {call_id} done, but arguments still missing?")
                          else:
                               logger.warning(f"Received function_call item done without sufficient info: {item}")
                          updated_message_str = None # Don't forward internal processing
