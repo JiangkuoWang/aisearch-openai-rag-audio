@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 from enum import Enum
 from typing import Any, Callable, Optional
 
@@ -222,11 +223,24 @@ class RTMiddleTier:
         import ssl
         ssl_context = ssl.create_default_context()
 
+        # Read proxy from environment variables
+        # Use https_proxy for wss:// connections
+        proxy_url = os.environ.get('https_proxy') or os.environ.get('HTTPS_PROXY')
+        if proxy_url:
+            logger.info(f"Using proxy server: {proxy_url}")
+
 
         # Remove base_url from session, connect directly to full URL
         async with aiohttp.ClientSession() as session:
             try:
-                async with session.ws_connect(target_url, headers=headers, timeout=30.0, ssl=ssl_context) as target_ws:
+                # Pass the proxy_url to ws_connect
+                async with session.ws_connect(
+                    target_url,
+                    headers=headers,
+                    timeout=30.0,
+                    ssl=ssl_context,
+                    proxy=proxy_url # Add proxy argument
+                ) as target_ws:
                     logger.info("Successfully connected to OpenAI Realtime API.")
                     # The gather logic remains conceptually the same
                     async def from_client_to_server():
