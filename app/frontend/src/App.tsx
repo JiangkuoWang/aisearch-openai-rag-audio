@@ -33,7 +33,6 @@ function App() {
         },
         onReceivedExtensionMiddleTierToolResponse: message => {
             const result: ToolResult = JSON.parse(message.tool_result);
-
             const files: GroundingFile[] = result.sources.map(x => {
                 return { id: x.chunk_id, name: x.title, content: x.chunk };
             });
