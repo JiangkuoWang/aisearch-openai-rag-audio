@@ -44,6 +44,8 @@ async def create_app():
     # Get absolute paths for RAG data files relative to backend dir
     rag_metadata_file_path = BACKEND_DIR / os.environ.get("RAG_METADATA_FILE", "rag_data/rag_data.jsonl")
     rag_vector_file_path = BACKEND_DIR / os.environ.get("RAG_VECTOR_FILE", "rag_data/rag_vectors.npy")
+    # New path for LlamaIndex
+    llama_graph_index_dir = BACKEND_DIR / os.environ.get("LLAMA_GRAPH_INDEX_DIR", "rag_data/llama_graph_index")
 
     rag_provider: Optional[BaseRAGProvider] = None
     rag_metadata = []
@@ -60,19 +62,18 @@ async def create_app():
         logger.info(f"  Vector file: {rag_vector_file_path}")
         if rag_metadata_file_path.exists() and rag_vector_file_path.exists():
             try:
+                rag_metadata = [] # Load specifically for in_memory
                 with open(rag_metadata_file_path, 'r', encoding='utf-8') as f:
                     rag_metadata = [json.loads(line) for line in f]
-                rag_vectors = np.load(rag_vector_file_path)
+                rag_vectors = np.load(rag_vector_file_path) # Load specifically for in_memory
 
                 if len(rag_metadata) != rag_vectors.shape[0]:
                     logger.error("Mismatch between number of metadata entries and vectors. In-Memory RAG disabled.")
-                    rag_metadata = []
-                    rag_vectors = None
+                    # rag_metadata = [] # Reset on error
+                    # rag_vectors = None
                 else:
                     logger.info(f"Loaded {len(rag_metadata)} chunks for In-Memory RAG.")
-                    # Instantiate the provider *only if data loaded successfully*
                     try:
-                        # Dynamically import the provider class
                         from rag_providers.in_memory import InMemoryRAGProvider
                         rag_provider = InMemoryRAGProvider(
                             openai_client=openai_client,
@@ -80,21 +81,49 @@ async def create_app():
                             all_metadata=rag_metadata,
                             all_vectors=rag_vectors
                         )
-                        # Optional: Call async initialize if the provider needs it
-                        # await rag_provider.initialize()
+                        # await rag_provider.initialize() # InMemory provider doesn't have async init
                         logger.info("In-Memory RAG Provider Initialized.")
                     except ImportError as e:
                          logger.error(f"Failed to import InMemoryRAGProvider: {e}. RAG disabled.")
                     except Exception as e:
                         logger.exception(f"Error initializing InMemoryRAGProvider: {e}. RAG disabled.")
-                        rag_provider = None # Ensure provider is None on error
+                        rag_provider = None
 
             except Exception as e:
-                logger.exception(f"Error loading RAG data files: {e}. In-Memory RAG disabled.")
-                rag_metadata = []
-                rag_vectors = None
+                logger.exception(f"Error loading In-Memory RAG data files: {e}. In-Memory RAG disabled.")
+                # rag_metadata = [] # Reset on error
+                # rag_vectors = None
         else:
-            logger.warning("One or both RAG data files not found. In-Memory RAG disabled.")
+            logger.warning("One or both In-Memory RAG data files not found. In-Memory RAG disabled.")
+
+    elif rag_provider_type == "llama_index":
+        logger.info("Attempting to initialize LlamaIndex Graph RAG provider...")
+        logger.info(f"  Index directory: {llama_graph_index_dir}")
+        if llama_graph_index_dir.is_dir(): # Check if it's a directory
+            try:
+                # Dynamically import the provider class
+                from rag_providers.llama_index_graph import LlamaIndexGraphRAGProvider
+                rag_provider = LlamaIndexGraphRAGProvider(
+                    openai_client=openai_client, # Pass client or handle API key within provider
+                    index_dir=llama_graph_index_dir,
+                    embedding_model_name=openai_embedding_model, # Pass name if needed internally
+                    llm_model_name=openai_model # Pass the main LLM model name
+                )
+                # Crucially, call the async initialize method to load the index
+                await rag_provider.initialize()
+                logger.info("LlamaIndex Graph RAG Provider Initialized.")
+            except FileNotFoundError as e:
+                 logger.error(f"LlamaIndex graph index directory not found during initialization: {e}")
+                 rag_provider = None
+            except ImportError as e:
+                 logger.error(f"Failed to import LlamaIndexGraphRAGProvider: {e}. RAG disabled.")
+                 rag_provider = None
+            except Exception as e:
+                logger.exception(f"Error initializing LlamaIndexGraphRAGProvider: {e}. RAG disabled.")
+                rag_provider = None
+        else:
+            logger.warning(f"LlamaIndex graph index directory not found or is not a directory: {llama_graph_index_dir}. LlamaIndex RAG disabled. Run create_llama_graph_index.py first.")
+
     elif rag_provider_type == "azure_search":
          # Placeholder for Azure Search RAG Provider initialization
          logger.warning("Azure Search RAG provider selected but not yet implemented in app.py. RAG disabled.")
