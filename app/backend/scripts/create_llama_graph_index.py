@@ -279,11 +279,18 @@ Settings.chunk_size = 512
 Settings.chunk_overlap = 50
 
 # --- Main Logic ---
-def create_graph_index():
+def create_graph_index(source_dir=None, index_dir=None):
+    global DATA_SOURCE_DIR, LLAMA_GRAPH_INDEX_DIR
     logger.info(f"Starting LlamaIndex PropertyGraphIndex creation/update...")
     logger.info(f"Data Source Directory: {DATA_SOURCE_DIR}")
     logger.info(f"Index Directory: {LLAMA_GRAPH_INDEX_DIR}")
     logger.info(f"Using LLM for extraction: {LLAMA_EXTRACTION_LLM_MODEL}")
+
+    if source_dir is not None:
+        DATA_SOURCE_DIR = Path(source_dir)
+    if index_dir is not None:
+        LLAMA_GRAPH_INDEX_DIR = Path(index_dir)
+        LLAMA_GRAPH_INDEX_DIR.mkdir(parents=True, exist_ok=True)
 
     if not DATA_SOURCE_DIR.exists() or not any(DATA_SOURCE_DIR.iterdir()):
         logger.error(f"Data source directory not found or is empty: {DATA_SOURCE_DIR}")
@@ -308,7 +315,7 @@ def create_graph_index():
             # 注意: 实现稳健的索引更新（刷新）并不简单
             # 它涉及跟踪更改的文档、删除旧节点/关系、添加新节点等。
             # 目前，我们只关注在索引不存在时创建它。
-            return # 如果索引存在则退出
+            return existing_index # 如果索引存在则退出
         except FileNotFoundError:
             logger.info("未找到现有索引（或 graph_store.json 缺失）。继续创建。")
         except Exception as load_err:
@@ -345,6 +352,7 @@ def create_graph_index():
         index.storage_context.persist(persist_dir=str(LLAMA_GRAPH_INDEX_DIR)) # 使用字符串路径
 
         logger.info("LlamaIndex PropertyGraphIndex 创建完成。")
+        return index
 
     except ImportError as e:
         logger.error(f"索引创建期间的 ImportError: {e}。确保已安装 LlamaIndex。")

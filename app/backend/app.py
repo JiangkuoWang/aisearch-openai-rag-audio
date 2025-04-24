@@ -5,7 +5,7 @@ import json
 import numpy as np
 import openai
 import sys
-from typing import Optional, List, Dict, Any
+from typing import Any, List, Callable, Optional, Union, Dict
 import asyncio
 import tempfile
 import shutil # Added for directory cleanup new_pro
@@ -224,19 +224,309 @@ async def handle_upload(request: web.Request):
                  return web.HTTPInternalServerError(text="Failed to initialize In-Memory RAG provider.")
 
         elif provider_type == "llama_index":
-            # 暂不支持动态构建 LlamaIndex，退回使用 InMemoryRAGProvider
-            logger.warning("LlamaIndex 模式上传暂不支持，使用 InMemoryRAGProvider 替代")
-            try:
-                new_provider = InMemoryRAGProvider(
-                    openai_client=openai_client,
-                    embedding_model=embedding_model,
-                    all_metadata=metadata_list,
-                    all_vectors=vectors
-                )
-                logger.info("Fallback to InMemoryRAGProvider for llama_index mode.")
-            except Exception as e:
-                logger.exception("Failed to initialize fallback InMemoryRAGProvider for llama_index mode.")
-                return web.HTTPInternalServerError(text="Failed to initialize fallback RAG provider.")
+            from scripts.create_llama_graph_index import create_graph_index
+            llama_index_persist_dir = temp_dir / "llama_index_data"
+            llama_index_persist_dir.mkdir(exist_ok=True)    
+            index = await asyncio.to_thread(
+                create_graph_index,
+                source_dir=str(temp_dir),
+                index_dir=str(llama_index_persist_dir)
+            )
+            # logger.info("Initializing LlamaIndexGraphRAGProvider...")
+            # llama_index_persist_dir = temp_dir / "llama_index_data"
+            # llama_index_persist_dir.mkdir(exist_ok=True)
+            # logger.info(f"LlamaIndex persistence directory: {llama_index_persist_dir}")
+
+            # try:
+            #     # 1. 正确导入所需组件 index
+            #     from llama_index.core import SimpleDirectoryReader, Document
+            #     from llama_index.core.node_parser import SentenceSplitter
+            #     from llama_index.core.storage import StorageContext
+            #     from llama_index.core.prompts import PromptTemplate
+            #     from llama_index.llms.openai import OpenAI as LlamaOpenAI
+            #     from llama_index.core.schema import TransformComponent, BaseNode
+            #     import json
+            #     import re
+
+            #     # 2. 设置LLM
+            #     # llm_model_name = app["openai_model"]
+            #     llm_model_name = "gpt-4o"
+            #     llm = LlamaOpenAI(model=llm_model_name)
+            #     logger.info(f"初始化LlamaOpenAI，使用模型: {llm_model_name}")
+
+            #     # 3. 加载文档
+            #     logger.info(f"从{temp_dir}加载文档")
+            #     docs = SimpleDirectoryReader(str(temp_dir)).load_data()
+            #     logger.info(f"成功加载{len(docs)}个文档")
+
+            #     # 4. 分割文档为节点
+            #     splitter = SentenceSplitter(chunk_size=1024, chunk_overlap=20)
+            #     nodes = splitter.get_nodes_from_documents(docs)
+            #     logger.info(f"将文档分割为{len(nodes)}个节点")
+
+            #     # 5. 创建三元组提取模板和解析函数
+            #     KG_TRIPLET_EXTRACT_TMPL = """
+            #     -目标-
+            #     给定文本文档，识别文本中的所有实体及其实体类型，以及已识别实体之间的所有关系。
+            #     从文本中提取多达{max_knowledge_triplets}个实体关系三元组。
+
+            #     -步骤-
+            #     1. 识别所有实体。对于每个识别的实体，提取以下信息：
+            #     - entity_name: 实体名称，首字母大写
+            #     - entity_type: 实体类型
+            #     - entity_description: 实体属性和活动的全面描述
+
+            #     2. 从步骤1中识别的实体中，识别所有彼此明确相关的(source_entity, target_entity)对。
+            #     对于每对相关实体，提取以下信息：
+            #     - source_entity: 源实体的名称，如步骤1中所识别
+            #     - target_entity: 目标实体的名称，如步骤1中所识别
+            #     - relation: 源实体和目标实体之间的关系
+            #     - relationship_description: 解释为什么您认为源实体和目标实体相互关联
+
+            #     3. 输出格式：
+            #     - 以有效的JSON格式返回结果，包含两个键：'entities'（实体对象列表）和'relationships'（关系对象列表）。
+            #     - 排除JSON结构之外的任何文本（例如，无解释或评论）。
+            #     - 如果未识别到实体或关系，则返回空列表：{{ "entities": [], "relationships": [] }}。
+
+            #     -实际数据-
+            #     ######################
+            #     text: {text}
+            #     ######################
+            #     output:"""
+
+            #     def parse_fn(response_str):
+            #         """解析LLM响应，提取实体和关系"""
+            #         json_pattern = r"\{{.*\}}"
+            #         match = re.search(json_pattern, response_str, re.DOTALL)
+            #         entities = []
+            #         relationships = []
+            #         if not match:
+            #             return entities, relationships
+            #         json_str = match.group(0)
+            #         try:
+            #             data = json.loads(json_str)
+            #             entities = [
+            #                 (
+            #                     entity["entity_name"],
+            #                     entity["entity_type"],
+            #                     entity["entity_description"],
+            #                 )
+            #                 for entity in data.get("entities", [])
+            #             ]
+            #             relationships = [
+            #                 (
+            #                     relation["source_entity"],
+            #                     relation["target_entity"],
+            #                     relation["relation"],
+            #                     relation["relationship_description"],
+            #                 )
+            #                 for relation in data.get("relationships", [])
+            #             ]
+            #             return entities, relationships
+            #         except json.JSONDecodeError as e:
+            #             logger.error(f"解析JSON错误: {e}")
+            #             return entities, relationships
+
+            #     # 6. 创建自定义图关系提取器
+            #     class GraphRAGExtractor(TransformComponent):
+            #         """提取图形三元组的组件"""
+            #         llm: Any  # 声明字段
+            #         extract_prompt: PromptTemplate
+            #         parse_fn: Callable
+            #         max_paths_per_chunk: int = 3  # 带默认值的字段
+                    
+                
+            #         def __call__(self, nodes, **kwargs):
+            #             """处理节点列表"""
+            #             for node in nodes:
+            #                 # 从节点获取文本内容
+            #                 text = node.get_content()
+            #                 try:
+            #                     # 使用LLM提取三元组
+            #                     llm_response = self.llm.predict(
+            #                         self.extract_prompt,
+            #                         text=text,
+            #                         max_knowledge_triplets=self.max_paths_per_chunk
+            #                     )
+            #                     # 解析LLM响应
+            #                     entities, relationships = self.parse_fn(llm_response)
+                                
+            #                     # 添加到节点元数据
+            #                     from llama_index.core.graph_stores.types import EntityNode, Relation, KG_NODES_KEY, KG_RELATIONS_KEY
+                                
+            #                     # 处理实体
+            #                     entity_nodes = []
+            #                     for entity, entity_type, description in entities:
+            #                         entity_metadata = node.metadata.copy()
+            #                         entity_metadata["entity_description"] = description
+            #                         entity_node = EntityNode(
+            #                             name=entity,
+            #                             label=entity_type,
+            #                             properties=entity_metadata
+            #                         )
+            #                         entity_nodes.append(entity_node)
+                                
+            #                     # 处理关系
+            #                     relation_nodes = []
+            #                     for subj, obj, rel, description in relationships:
+            #                         relation_metadata = node.metadata.copy()
+            #                         relation_metadata["relationship_description"] = description
+            #                         relation_node = Relation(
+            #                             label=rel,
+            #                             source_id=subj,
+            #                             target_id=obj,
+            #                             properties=relation_metadata
+            #                         )
+            #                         relation_nodes.append(relation_node)
+                                
+            #                     # 保存到节点元数据
+            #                     node.metadata[KG_NODES_KEY] = entity_nodes
+            #                     node.metadata[KG_RELATIONS_KEY] = relation_nodes
+                                
+            #                 except Exception as e:
+            #                     logger.error(f"处理节点时出错: {e}")
+                        
+            #             return nodes
+
+            #     # 7. 创建图关系提取器实例
+            #     kg_extractor = GraphRAGExtractor(
+            #         llm=llm,
+            #         extract_prompt=PromptTemplate(KG_TRIPLET_EXTRACT_TMPL),
+            #         parse_fn=parse_fn,
+            #         max_paths_per_chunk=3
+            #     )
+            #     logger.info("创建了GraphRAGExtractor实例")
+
+            #     # 8. 从 create_llama_graph_index.py 导入必要的组件
+            #     import sys
+            #     from pathlib import Path
+                
+            #     # 添加 scripts 目录到系统路径
+            #     scripts_dir = BACKEND_DIR / "scripts"
+            #     if str(scripts_dir) not in sys.path:
+            #         sys.path.append(str(scripts_dir))
+            #         logger.info(f"已将 {scripts_dir} 添加到系统路径")
+                
+            #     try:
+            #         # 导入 create_llama_graph_index 脚本中的必要组件
+            #         from create_llama_graph_index import (
+            #             force_utf8, 
+            #             CustomJSONEncoder, 
+            #             fixed_spgs_persist, 
+            #             fixed_from_persist_path,
+            #             SimplePropertyGraphStore,
+            #             StorageContext,
+            #             PropertyGraphIndex,
+            #             load_index_from_storage,
+            #             Settings,
+            #             OpenAI,
+            #             SimpleDirectoryReader
+            #         )
+                    
+            #         # 应用 UTF-8 编码处理
+            #         force_utf8()
+                    
+            #         # 应用猴子补丁
+            #         original_persist = SimplePropertyGraphStore.persist
+            #         SimplePropertyGraphStore.persist = fixed_spgs_persist
+            #         original_from_persist_path = SimplePropertyGraphStore.from_persist_path
+            #         SimplePropertyGraphStore.from_persist_path = fixed_from_persist_path
+            #         logger.info("已应用 SimplePropertyGraphStore 编码补丁")
+                    
+            #         # 设置 LlamaIndex 全局配置
+            #         Settings.llm = OpenAI(model="gpt-4o", api_key=openai_api_key)
+            #         Settings.chunk_size = 512
+            #         Settings.chunk_overlap = 50
+            #         logger.info("已配置 LlamaIndex 全局设置")
+                    
+            #         # 9. 定义索引目录
+            #         llama_index_persist_dir = Path(llama_index_persist_dir)  # 确保是 Path 对象
+                    
+            #         # 10. 定义异步建索引函数
+            #         async def build_index_async():
+            #             # 将文件从临时目录加载到文档对象
+            #             logger.info(f"从 {temp_dir} 加载文档...")
+                        
+            #             # 定义同步函数在线程池中执行
+            #             def create_index_sync():
+            #                 logger.info("在线程池中开始构建 PropertyGraphIndex...")
+                            
+            #                 # 检查索引是否已存在
+            #                 try:
+            #                     if (llama_index_persist_dir / "graph_store.json").exists():
+            #                         try:
+            #                             # 使用直接的 SimplePropertyGraphStore 实例
+            #                             graph_store = SimplePropertyGraphStore()
+            #                             storage_context_load = StorageContext.from_defaults(
+            #                                 persist_dir=str(llama_index_persist_dir),
+            #                                 graph_store=graph_store
+            #                             )
+            #                             # 尝试使用 storage_context 加载已有索引
+            #                             existing_index = load_index_from_storage(storage_context_load)
+            #                             logger.info("已发现现有 PropertyGraphIndex，将使用它")
+            #                             return existing_index
+            #                         except Exception as load_err:
+            #                             logger.warning(f"检查现有索引时出错: {load_err}")
+            #                 except Exception as e:
+            #                     logger.warning(f"检查索引文件时出错: {e}")
+                            
+            #                 # 加载文档
+            #                 reader = SimpleDirectoryReader(str(temp_dir))
+            #                 documents = reader.load_data()
+            #                 if not documents:
+            #                     logger.error("未找到或加载文档。中止。")
+            #                     return None
+            #                 logger.info(f"已加载 {len(documents)} 份文档。")
+                            
+            #                 # 设置图存储和存储上下文
+            #                 graph_store_create = SimplePropertyGraphStore()
+            #                 storage_context_create = StorageContext.from_defaults(graph_store=graph_store_create)
+                            
+            #                 # 构建 PropertyGraphIndex
+            #                 logger.info("构建 PropertyGraphIndex（这可能需要时间并调用 LLM）...")
+            #                 # 这一步使用全局配置的 Settings.llm 等。
+            #                 index = PropertyGraphIndex.from_documents(
+            #                     documents,
+            #                     storage_context=storage_context_create,
+            #                     show_progress=True,
+            #                 )
+                            
+            #                 # 持久化索引
+            #                 logger.info(f"将索引持久化到 {llama_index_persist_dir}...")
+            #                 # 创建期间使用的存储上下文包含要持久化的数据
+            #                 index.storage_context.persist(persist_dir=str(llama_index_persist_dir))
+                            
+            #                 logger.info("LlamaIndex PropertyGraphIndex 创建完成。")
+            #                 return index
+                        
+            #             # 在线程池中执行索引构建
+            #             return await asyncio.to_thread(create_index_sync)
+                    
+            #         # 开始异步构建索引
+            #         index = await build_index_async()
+                    
+                    # 创建检索器
+            retriever = index.as_retriever(similarity_top_k=5)
+                    
+                    # 实例化并设置provider
+            new_provider = LlamaIndexGraphRAGProvider(
+                        openai_client=openai_client,
+                        index_dir=llama_index_persist_dir,
+                        embedding_model_name=embedding_model,
+                        llm_model_name=app["openai_model"],
+                    )
+                    
+                    # 设置索引和检索器
+            new_provider.index = index
+            new_provider.retriever = retriever
+            logger.info("LlamaIndexGraphRAGProvider已初始化，配置了PropertyGraphIndex和检索器")
+            
+            #     except ImportError as e:
+            #         logger.error(f"导入错误: {e}，请安装必要的库: pip install llama-index llama-index-llms-openai")
+            #         return web.HTTPInternalServerError(text=f"缺少必要的库: {e}")
+            #     except Exception as e:
+            #         logger.exception(f"初始化 LlamaIndex 组件时出错: {e}")
+            #         return web.HTTPInternalServerError(text=f"初始化 LlamaIndex 组件时出错: {e}")
 
         # Activate the new provider
         if new_provider:
@@ -244,8 +534,6 @@ async def handle_upload(request: web.Request):
             logger.info(f"Successfully activated {provider_type} RAG provider with uploaded data.")
             # Clean up temp dir *only* after successful provider activation
             # For LlamaIndex, decide if you need to keep the persisted index dir
-            # If LlamaIndexGraphProvider loads from graph_index_dir on init,
-            # and initialize builds it if not present, we might keep llama_index_persist_dir
             # but remove the original uploaded files.
             # Simple cleanup for now: remove the whole temp dir. Adjust if needed.
             shutil.rmtree(temp_dir)
