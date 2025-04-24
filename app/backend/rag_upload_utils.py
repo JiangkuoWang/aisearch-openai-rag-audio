@@ -31,14 +31,35 @@ def extract_text(filename: str, raw: bytes) -> str:
         except Exception as e:
             logger.error(f"Error extracting PDF text from {filename}: {e}")
             return ""
-    elif filename.lower().endswith((".docx")):
-        try:
+    elif filename.lower().endswith((".doc", ".docx")):
+        # try:
+            # 更加健壮的DOCX处理
             doc = Document(io.BytesIO(raw))
-            paras = [p.text for p in doc.paragraphs if p.text]
-            return "\n".join(paras)
-        except Exception as e:
-            logger.error(f"Error extracting DOCX text from {filename}: {e}")
-            return ""
+            full_text = []
+            
+            # 提取所有段落文本
+            for para in doc.paragraphs:
+                if para.text.strip():
+                    full_text.append(para.text.strip())
+            
+            # 提取表格中的文本
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        if cell.text.strip():
+                            full_text.append(cell.text.strip())
+            
+            # 确保有内容被提取
+            if not full_text:
+                logger.warning(f"No content extracted from {filename}")
+                return ""
+                
+            result = "\n".join(full_text)
+            logger.info(f"Successfully extracted {len(result)} characters from {filename}")
+            return result
+        # except Exception as e:
+        #     logger.error(f"Error extracting DOCX text from {filename}: {e}", exc_info=True)
+        #     return ""
     else:
         logger.warning(f"Unsupported file type for extraction: {filename}")
         return ""

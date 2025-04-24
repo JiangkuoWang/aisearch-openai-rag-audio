@@ -32,7 +32,14 @@ export function GroundingFiles({ files, onSelected }: Properties) {
     const { t } = useTranslation();
     const isAnimating = useRef(false);
 
-    if (files.length === 0) {
+    // 去重，按 id 保留首次出现
+    const uniqueFilesMap = new Map<string, GroundingFileType>();
+    files.forEach(file => {
+        if (!uniqueFilesMap.has(file.id)) uniqueFilesMap.set(file.id, file);
+    });
+    const uniqueFiles = Array.from(uniqueFilesMap.values());
+
+    if (uniqueFiles.length === 0) {
         return null;
     }
 
@@ -54,9 +61,9 @@ export function GroundingFiles({ files, onSelected }: Properties) {
                         onLayoutAnimationComplete={() => (isAnimating.current = false)}
                     >
                         <div className="flex flex-wrap gap-2">
-                            {files.map((file, index) => (
-                                <motion.div key={index} variants={variants} initial="hidden" animate="visible" custom={index}>
-                                    <GroundingFile key={index} value={file} onClick={() => onSelected(file)} />
+                            {uniqueFiles.map((file, index) => (
+                                <motion.div key={file.id} variants={variants} initial="hidden" animate="visible" custom={index}>
+                                    <GroundingFile value={file} onClick={() => onSelected(file)} />
                                 </motion.div>
                             ))}
                         </div>

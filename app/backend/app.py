@@ -135,19 +135,29 @@ async def handle_upload(request: web.Request):
 
                     # Extract and chunk text immediately after saving
                     raw_data = temp_file_path.read_bytes()
-                    extracted_text = extract_text(part.filename, raw_data)
-                    if not extracted_text:
-                         logger.warning(f"No text extracted from {part.filename}, skipping.")
-                         continue # Skip this file
-                    chunks = chunk_text(extracted_text) # Use default chunk size
-                    if not chunks:
-                        logger.warning(f"No chunks created from {part.filename}, skipping.")
-                        continue # Skip this file
-                    logger.info(f"Extracted and chunked {part.filename} into {len(chunks)} chunks.")
+                    try:
+                        extracted_text = extract_text(part.filename, raw_data)
+                        if not extracted_text:
+                             logger.warning(f"No text extracted from {part.filename}, skipping.")
+                             continue # Skip this file
+                             
+                        chunks = chunk_text(extracted_text) # Use default chunk size
+                        if not chunks:
+                            logger.warning(f"No chunks created from {part.filename}, skipping.")
+                            continue # Skip this file
+                            
+                        logger.info(f"Extracted and chunked {part.filename} into {len(chunks)} chunks.")
 
-                    # Append chunks and their titles
-                    texts.extend(chunks)
-                    titles.extend([part.filename] * len(chunks))
+                        # Append chunks and their titles
+                        texts.extend(chunks)
+                        titles.extend([part.filename] * len(chunks))
+                    except ImportError as e:
+                        # 明确捕获缺少依赖库的错误
+                        logger.error(f"Missing required library for processing {part.filename}: {e}")
+                        return web.HTTPInternalServerError(text=f"Missing required library for processing {part.filename}. Please install all required dependencies.")
+                    except Exception as e:
+                        logger.exception(f"Error extracting text from {part.filename}: {e}")
+                        # 继续处理其他文件，不中断上传过程
 
                 except Exception as e:
                     logger.exception(f"Error processing/saving file {part.filename}: {e}")
@@ -214,22 +224,19 @@ async def handle_upload(request: web.Request):
                  return web.HTTPInternalServerError(text="Failed to initialize In-Memory RAG provider.")
 
         elif provider_type == "llama_index":
-            logger.info("Initializing LlamaIndexGraphRAGProvider...")
-            llama_index_persist_dir = temp_dir / "llama_index_data"
-            llama_index_persist_dir.mkdir(exist_ok=True)
-            logger.info(f"LlamaIndex persistence directory: {llama_index_persist_dir}")
+            # 暂不支持动态构建 LlamaIndex，退回使用 InMemoryRAGProvider
+            logger.warning("LlamaIndex 模式上传暂不支持，使用 InMemoryRAGProvider 替代")
             try:
-                new_provider = LlamaIndexGraphRAGProvider(
+                new_provider = InMemoryRAGProvider(
                     openai_client=openai_client,
-                    index_dir=llama_index_persist_dir,
-                    embedding_model_name=embedding_model,
-                    llm_model_name=app["openai_model"],
+                    embedding_model=embedding_model,
+                    all_metadata=metadata_list,
+                    all_vectors=vectors
                 )
-                await new_provider.initialize(source_files_dir=temp_dir)
-                logger.info("LlamaIndexGraphRAGProvider initialized and index potentially built.")
+                logger.info("Fallback to InMemoryRAGProvider for llama_index mode.")
             except Exception as e:
-                logger.exception("Failed to initialize LlamaIndexGraphRAGProvider.")
-                return web.HTTPInternalServerError(text="Failed to initialize LlamaIndex provider.")
+                logger.exception("Failed to initialize fallback InMemoryRAGProvider for llama_index mode.")
+                return web.HTTPInternalServerError(text="Failed to initialize fallback RAG provider.")
 
         # Activate the new provider
         if new_provider:

@@ -42,15 +42,11 @@ class InMemoryRAGProvider(BaseRAGProvider):
         logger.info(f"Searching in-memory for '{query}' (top_k={top_k})...")
 
         try:
-            # 1. Get query embedding
-            embed_api_start_time = time.perf_counter() # Start API timer
-            loop = asyncio.get_running_loop()
-            response = await loop.run_in_executor(
-                None, # Use default executor
-                lambda: self.openai_client.embeddings.create(
-                    input=[query],
-                    model=self.embedding_model
-                )
+            # 1. Get query embedding using AsyncOpenAI client
+            embed_api_start_time = time.perf_counter()  # Start API timer
+            response = await self.openai_client.embeddings.create(
+                input=[query],
+                model=self.embedding_model
             )
             query_vector = np.array(response.data[0].embedding, dtype=np.float32).reshape(1, -1)
             embed_api_end_time = time.perf_counter() # End API timer
