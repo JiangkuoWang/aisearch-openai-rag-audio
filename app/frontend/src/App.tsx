@@ -11,7 +11,8 @@ import useRealTime from "@/hooks/useRealtime";
 import useAudioRecorder from "@/hooks/useAudioRecorder";
 import useAudioPlayer from "@/hooks/useAudioPlayer";
 
-import { GroundingFile, ToolResult } from "./types";
+import { GroundingFile, ToolResult, RagProviderType } from "./types";
+import RagSelector from "./RagSelector";
 
 import logo from "./assets/logo.svg";
 
@@ -19,6 +20,11 @@ function App() {
     const [isRecording, setIsRecording] = useState(false);
     const [groundingFiles, setGroundingFiles] = useState<GroundingFile[]>([]);
     const [selectedFile, setSelectedFile] = useState<GroundingFile | null>(null);
+
+    // RAG selection and upload state
+    const [ragType, setRagType] = useState<RagProviderType>("none");
+    const [files, setFiles] = useState<FileList | null>(null);
+    const [uploading, setUploading] = useState(false);
 
     const { startSession, addUserAudio, inputAudioBufferClear } = useRealTime({
         onWebSocketOpen: () => console.log("WebSocket connection opened"),
@@ -60,6 +66,24 @@ function App() {
         }
     };
 
+    // Upload RAG config and files
+    const doUpload = async () => {
+        setUploading(true);
+        // Set provider type
+        await fetch("/rag-config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ provider_type: ragType })
+        });
+        // Upload files if needed
+        if (ragType !== "none" && files) {
+            const fd = new FormData();
+            Array.from(files).forEach(f => fd.append("file", f));
+            await fetch("/upload", { method: "POST", body: fd });
+        }
+        setUploading(false);
+    };
+
     const { t } = useTranslation();
 
     return (
@@ -71,6 +95,15 @@ function App() {
                 <h1 className="mb-8 bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-4xl font-bold text-transparent md:text-7xl">
                     {t("app.title")}
                 </h1>
+                {/* RAG 模式选择与上传美化组件 */}
+                <RagSelector
+                    ragType={ragType}
+                    setRagType={setRagType}
+                    files={files}
+                    setFiles={setFiles}
+                    uploading={uploading}
+                    doUpload={doUpload}
+                />
                 <div className="mb-4 flex flex-col items-center justify-center">
                     <Button
                         onClick={onToggleListening}

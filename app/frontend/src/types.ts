@@ -72,3 +72,5 @@ export type ExtensionMiddleTierToolResponse = {
 export type ToolResult = {
     sources: { chunk_id: string; title: string; chunk: string }[];
 };
+
+export type RagProviderType = "none" | "in_memory" | "llama_index";
