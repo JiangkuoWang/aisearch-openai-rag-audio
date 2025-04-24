@@ -22,6 +22,7 @@ logger = logging.getLogger("voicerag")
 BACKEND_DIR = Path(__file__).parent.resolve()
 
 async def create_app():
+    app = web.Application()
     if not os.environ.get("RUNNING_IN_PRODUCTION"): # Check env var first
         logger.info("Running in development mode, loading from .env file")
         env_path = BACKEND_DIR / ".env"
@@ -151,7 +152,7 @@ async def create_app():
     rtmt = RTMiddleTier(
         openai_api_key=openai_api_key,
         model=openai_model,
-        voice_choice=os.environ.get("AZURE_OPENAI_REALTIME_VOICE_CHOICE") or "alloy"
+        voice_choice=os.environ.get("OPENAI_REALTIME_VOICE_CHOICE") or "alloy"
     )
 
     # Configure System Prompt (remains the same)
@@ -190,7 +191,6 @@ async def create_app():
     return app
 
 if __name__ == "__main__":
-    app = web.Application() # Create app instance before calling create_app
     async def main():
         return await create_app()
 
