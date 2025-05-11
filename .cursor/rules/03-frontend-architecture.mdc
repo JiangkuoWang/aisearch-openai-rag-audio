@@ -1,0 +1,38 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Frontend Architecture
+
+The frontend is built with React, TypeScript, and Tailwind CSS.
+
+## Core Components
+
+- [app/frontend/src/App.tsx](mdc:app/frontend/src/App.tsx) - Main application component handling UI state and WebSocket connections
+- [app/frontend/src/RagSelector.tsx](mdc:app/frontend/src/RagSelector.tsx) - Component for selecting RAG provider type and uploading documents
+- [app/frontend/src/FileUploadItem.tsx](mdc:app/frontend/src/FileUploadItem.tsx) - Component for individual file upload items
+
+## Types and Utilities
+
+- [app/frontend/src/types.ts](mdc:app/frontend/src/types.ts) - TypeScript type definitions
+- [app/frontend/src/lib/](mdc:app/frontend/src/lib) - Utility functions
+
+## Audio Handling
+
+The frontend handles:
+- Microphone capture via browser APIs
+- Audio streaming to backend through WebSockets
+- Playback of audio responses
+- Display of text responses with citations
+
+## User Interaction Flow
+
+1. User selects a RAG provider type
+2. User uploads documents for knowledge base
+3. User clicks "Start conversation" button
+4. Voice input is captured and streamed to backend
+5. Responses are played as audio and displayed as text
+6. RAG results are shown with source citations
+
+

@@ -1,0 +1,40 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Real-Time Audio Integration
+
+This application integrates with the OpenAI GPT-4o real-time API for audio streaming.
+
+## Key Components
+
+- [app/backend/rtmt.py](mdc:app/backend/rtmt.py) - Real-Time Middle Tier (RTMT) handles WebSocket connections and tool execution
+- [app/frontend/src/App.tsx](mdc:app/frontend/src/App.tsx) - Frontend audio capture and playback
+
+## Audio Flow
+
+1. **Capture**: Browser captures audio from user's microphone
+2. **Transport**: Audio is streamed via WebSockets to the backend
+3. **Processing**: Backend forwards audio to OpenAI's real-time API
+4. **Response**: OpenAI generates both text and audio responses
+5. **Playback**: Frontend plays audio responses and displays text
+
+## WebSocket Communication
+
+- `/ws/rt` endpoint establishes a proxy between the client and OpenAI
+- Binary data for audio is transmitted in both directions
+- JSON messages for text, tool calls, and metadata
+
+## Tool Calling in Real-Time
+
+- OpenAI model can call tools like `search` during the conversation
+- Messages are intercepted and processed by the RTMT
+- Tool results are sent back to OpenAI to continue the generation
+
+## Voice Settings
+
+The voice used for responses can be configured through:
+- Environment variables (`AZURE_OPENAI_REALTIME_VOICE_CHOICE`)
+- Options include: "echo", "alloy", "shimmer"
+

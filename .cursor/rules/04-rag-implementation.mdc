@@ -1,0 +1,41 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# RAG Implementation Details
+
+The application supports multiple RAG (Retrieval-Augmented Generation) implementations:
+
+## RAG Providers
+
+1. **In-Memory Provider** - [app/backend/rag_providers/in_memory.py](mdc:app/backend/rag_providers/in_memory.py)
+   - Simple vector search in memory
+   - Documents are chunked, embedded, and stored in memory
+   - Suitable for small-scale demonstrations
+
+2. **Llama Index Graph Provider** - [app/backend/rag_providers/llama_index_graph.py](mdc:app/backend/rag_providers/llama_index_graph.py)
+   - Uses Llama Index for more sophisticated retrieval
+   - Builds a graph-based index of documents
+   - More powerful for complex queries and relationships
+
+## RAG Tools
+
+- [app/backend/ragtools.py](mdc:app/backend/ragtools.py) - Defines tools used by the RAG system:
+  - `search` - Searches the knowledge base
+  - `report_grounding` - Reports search results back to the client
+
+## Document Processing
+
+- [app/backend/rag_upload_utils.py](mdc:app/backend/rag_upload_utils.py) handles:
+  - Text extraction from various file formats
+  - Chunking text into manageable segments
+  - Creating overlapping chunks for better context
+
+## Integration with OpenAI Real-Time
+
+RAG results are incorporated into the conversation through tool calls in the real-time API flow:
+1. OpenAI model makes tool calls when needed for information retrieval
+2. Backend executes the tool and returns results
+3. Model incorporates retrieved information into its response
+

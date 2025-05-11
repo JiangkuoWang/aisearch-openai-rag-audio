@@ -1,0 +1,27 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# VoiceRAG Project Overview
+
+This is a RAG (Retrieval-Augmented Generation) application with voice interaction capabilities
+
+## Project Structure
+
+- [app/backend/app.py](mdc:app/backend/app.py) - Main backend application with FastAPI server
+- [app/backend/rtmt.py](mdc:app/backend/rtmt.py) - Real-Time Middle Tier for handling OpenAI real-time audio API
+- [app/frontend/src/App.tsx](mdc:app/frontend/src/App.tsx) - Main frontend React component
+- [app/frontend/src/RagSelector.tsx](mdc:app/frontend/src/RagSelector.tsx) - Component for selecting RAG provider and uploading files
+
+## Key Features
+
+- Voice interface using Azure OpenAI's GPT-4o Realtime API
+- RAG with Azure AI Search for answering questions about a knowledge base
+- Audio streaming for both input and output
+- Support for multiple RAG providers (In-Memory, Llama Index)
+- File upload and processing capabilities
+
+
+
+

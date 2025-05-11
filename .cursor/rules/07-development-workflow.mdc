@@ -1,0 +1,53 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Development Workflow
+
+## Project Organization
+
+- `.devcontainer/` - Development container configuration
+- `app/` - Main application code
+  - `backend/` - Python backend code
+  - `frontend/` - React frontend code
+- `docs/` - Documentation files
+- `scripts/` - Development and deployment scripts
+
+## Development Environment
+
+The project supports multiple development environments:
+
+1. **GitHub Codespaces** - Fully configured cloud development environment
+2. **Dev Containers** - Local VS Code with containers
+3. **Local Setup** - Standard local development
+
+## Backend Development
+
+The Python backend uses:
+- FastAPI for the web server
+- WebSockets for real-time communication
+- Azure SDK for integration with Azure services
+
+Changes to the backend code will be reflected after restarting the dev server.
+
+## Frontend Development
+
+The React frontend uses:
+- TypeScript for type safety
+- Tailwind CSS for styling
+- Vite for fast development
+
+The frontend development server supports hot module reloading.
+
+## Scripts
+
+- `scripts/start.ps1` / `scripts/start.sh` - Start development servers
+
+## Testing Changes
+
+1. Make changes to code
+2. Test locally using the start scripts
+3. Deploy to Azure using azd or the deployment scripts
+
+

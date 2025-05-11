@@ -462,3 +462,7 @@ class RTMiddleTier:
 
     def attach_to_app(self, app, path):
         app.router.add_get(path, self._websocket_handler)
+
+"""
+请你分析数据库实现的方案，都有哪些方案可选，各有什么特点
+"""

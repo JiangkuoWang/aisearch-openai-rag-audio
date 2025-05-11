@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Mic, MicOff } from "lucide-react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -14,9 +14,16 @@ import useAudioPlayer from "@/hooks/useAudioPlayer";
 import { GroundingFile, ToolResult, RagProviderType } from "./types";
 import RagSelector from "./RagSelector";
 
+// 导入认证相关组件
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { AuthModal } from "./components/AuthModal";
+import { UserMenu } from "./components/UserMenu";
+import { getAuthStatus } from "./lib/api";
+
 import logo from "./assets/logo.svg";
 
-function App() {
+// 封装应用内容，以便可以使用认证上下文
+function AppContent() {
     const [isRecording, setIsRecording] = useState(false);
     const [groundingFiles, setGroundingFiles] = useState<GroundingFile[]>([]);
     const [selectedFile, setSelectedFile] = useState<GroundingFile | null>(null);
@@ -27,6 +34,24 @@ function App() {
     const [uploading, setUploading] = useState(false);
     const [dbConnected, setDbConnected] = useState(false);
     const [sidebarOpen, setSidebarOpen] = useState(true);
+    
+    // 认证状态
+    const [authModalOpen, setAuthModalOpen] = useState(false);
+    const { isAuthenticated } = useAuth();
+    
+    // 检查认证状态
+    useEffect(() => {
+        const checkAuthStatus = async () => {
+            try {
+                const status = await getAuthStatus();
+                console.log("Auth status:", status);
+            } catch (error) {
+                console.error("Failed to check auth status:", error);
+            }
+        };
+        
+        checkAuthStatus();
+    }, []);
 
     const { startSession, addUserAudio, inputAudioBufferClear } = useRealTime({
         onWebSocketOpen: () => console.log("WebSocket connection opened"),
@@ -70,12 +95,22 @@ function App() {
 
     // Upload RAG config and files
     const doUpload = async (): Promise<boolean> => {
+        // 如果未登录，则打开登录模态框
+        if (!isAuthenticated) {
+            setAuthModalOpen(true);
+            return false;
+        }
+        
         try {
             setUploading(true);
             // Set provider type
             const configResponse = await fetch("/rag-config", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { 
+                    "Content-Type": "application/json",
+                    // 如果有认证令牌，添加到请求头
+                    ...(getAuthHeaders() || {})
+                },
                 body: JSON.stringify({ provider_type: ragType })
             });
             
@@ -88,7 +123,11 @@ function App() {
             if (ragType !== "none" && files) {
                 const fd = new FormData();
                 Array.from(files).forEach(f => fd.append("file", f));
-                const uploadResponse = await fetch("/upload", { method: "POST", body: fd });
+                const uploadResponse = await fetch("/upload", { 
+                    method: "POST", 
+                    body: fd,
+                    headers: getAuthHeaders() || undefined
+                });
                 
                 if (!uploadResponse.ok) {
                     console.error("Upload failed:", await uploadResponse.text());
@@ -103,13 +142,24 @@ function App() {
             setUploading(false);
         }
     };
+    
+    // 获取认证请求头
+    const getAuthHeaders = () => {
+        const token = localStorage.getItem('voice_rag_auth_token');
+        return token ? { 'Authorization': `Bearer ${token}` } : null;
+    };
 
     const { t } = useTranslation();
 
     return (
         <div className="flex min-h-screen flex-col bg-gray-100 text-gray-900">
-            <div className="p-4 sm:absolute sm:left-4 sm:top-4">
-                <img src={logo} alt="Azure logo" className="h-16 w-16" />
+            <div className="flex justify-between items-center p-4">
+                <div>
+                    <img src={logo} alt="Azure logo" className="h-16 w-16" />
+                </div>
+                <div className="mr-4">
+                    <UserMenu onLoginClick={() => setAuthModalOpen(true)} />
+                </div>
             </div>
             <main className={`flex flex-grow flex-col items-center justify-center transition-all duration-300 ${dbConnected && sidebarOpen ? 'pr-96' : ''}`}>
                 <h1 className="mb-8 bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-4xl font-bold text-transparent md:text-7xl">
@@ -145,14 +195,14 @@ function App() {
                         {!sidebarOpen && (
                             <button 
                                 onClick={() => setSidebarOpen(true)}
-                                className="fixed top-1/2 right-0 z-50 p-2 bg-white rounded-l-md shadow-md flex items-center justify-center transform -translate-y-1/2"
+                                className="fixed top-1/2 right-0 z-40 p-2 bg-white rounded-l-md shadow-md flex items-center justify-center transform -translate-y-1/2"
                             >
                                 <ChevronLeft className="h-5 w-5" />
                             </button>
                         )}
                         
                         {/* 侧栏面板 */}
-                        <aside className={`fixed top-0 right-0 h-screen w-96 bg-white/90 backdrop-blur-sm rounded-l-2xl shadow-lg p-6 overflow-y-auto z-50 transform transition-all duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+                        <aside className={`fixed top-0 right-0 h-screen w-96 bg-white/90 backdrop-blur-sm rounded-l-2xl shadow-lg p-6 overflow-y-auto z-40 transform transition-all duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : 'translate-x-full'}`}>
                             <button 
                                 onClick={() => setSidebarOpen(false)} 
                                 className="absolute top-4 left-4 p-2 bg-white hover:bg-gray-100 rounded-full shadow-md transition-colors"
@@ -190,7 +240,19 @@ function App() {
             </footer>
 
             <GroundingFileView groundingFile={selectedFile} onClosed={() => setSelectedFile(null)} />
+            
+            {/* 认证模态框 */}
+            <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} />
         </div>
+    );
+}
+
+// 主应用组件，使用AuthProvider包装内容
+function App() {
+    return (
+        <AuthProvider>
+            <AppContent />
+        </AuthProvider>
     );
 }
 

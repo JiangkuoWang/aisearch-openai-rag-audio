@@ -1,0 +1,34 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Backend Architecture
+
+The backend architecture consists of several key components:
+
+## Core Components
+
+- [app/backend/app.py](mdc:app/backend/app.py) - Main FastAPI application with HTTP/WebSocket endpoints
+- [app/backend/rtmt.py](mdc:app/backend/rtmt.py) - Real-Time Middle Tier (RTMT) handling WebSocket connections to OpenAI
+- [app/backend/ragtools.py](mdc:app/backend/ragtools.py) - Tools for RAG functionality
+
+## RAG Providers
+
+- [app/backend/rag_providers/base.py](mdc:app/backend/rag_providers/base.py) - Base class for RAG providers
+- [app/backend/rag_providers/in_memory.py](mdc:app/backend/rag_providers/in_memory.py) - In-memory RAG implementation
+- [app/backend/rag_providers/llama_index_graph.py](mdc:app/backend/rag_providers/llama_index_graph.py) - Llama Index-based implementation
+
+## File Processing
+
+- [app/backend/rag_upload_utils.py](mdc:app/backend/rag_upload_utils.py) - Utilities for processing uploaded files
+- [app/backend/scripts/create_llama_graph_index.py](mdc:app/backend/scripts/create_llama_graph_index.py) - Script for creating Llama graph index
+
+## Data Flow
+
+1. Client connects via WebSocket to `/ws/rt`
+2. Backend establishes connection to OpenAI RTRealtimeAPI
+3. Audio/text is streamed bidirectionally
+4. RAG tools are attached to RTMT when a RAG provider is activated
+5. File uploads are processed, chunked, and embedded using OpenAI models
+

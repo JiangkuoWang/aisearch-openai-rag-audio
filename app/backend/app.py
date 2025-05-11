@@ -11,10 +11,12 @@ import tempfile
 import shutil # Added for directory cleanup new_pro
 
 from aiohttp import web
+import aiohttp_cors  # 添加CORS支持
 from dotenv import load_dotenv
 
 # Local imports
 from rtmt import RTMiddleTier
+from auth.router import router as auth_router
 from rag_providers.base import BaseRAGProvider
 from rag_providers.in_memory import InMemoryRAGProvider
 from rag_providers.llama_index_graph import LlamaIndexGraphRAGProvider
@@ -28,6 +30,9 @@ except ImportError:
     def extract_text(filename: str, raw: bytes) -> str: return ""
     def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> List[str]: return []
 
+from auth_middleware import setup_auth_middleware
+from auth.models import associate_document_with_user, get_user_document_ids
+import sqlite3
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("voicerag")
@@ -75,11 +80,22 @@ async def handle_rag_config(request: web.Request):
         app["rag_provider_type"] = provider_type
         logger.info(f"RAG provider type set to: {provider_type}")
 
+        # 添加：获取当前用户ID（如果有）
+        user_id = request.get("user_id")
+        if user_id:
+            logger.info(f"用户 {user_id} 设置RAG提供程序类型为: {provider_type}")
+            # 将用户ID保存到应用上下文中，以便后续上传处理
+            app["current_user_id"] = user_id
+        
         # If 'none', detach tools immediately.
         if provider_type == "none":
             update_rag_provider(app, None)
 
-        return web.json_response({"status": "ok", "message": f"RAG provider type set to {provider_type}"})
+        return web.json_response({
+            "status": "ok", 
+            "message": f"RAG provider type set to {provider_type}",
+            "user_authenticated": user_id is not None
+        })
     except json.JSONDecodeError:
         logger.error("Failed to decode JSON in /rag-config request.")
         return web.HTTPBadRequest(text="Invalid JSON payload.")
@@ -247,10 +263,39 @@ async def handle_upload(request: web.Request):
         if new_provider:
             update_rag_provider(app, new_provider)
             logger.info(f"Successfully activated {provider_type} RAG provider with uploaded data.")
-            # Clean up temp dir *only* after successful provider activation
-            # For LlamaIndex, decide if you need to keep the persisted index dir
-            # but remove the original uploaded files.
-            # Simple cleanup for now: remove the whole temp dir. Adjust if needed.
+            
+            # 添加：如果请求中有用户信息，将文档与用户关联
+            user_id = request.get("user_id")
+            if user_id:
+                db_conn_upload: Optional[sqlite3.Connection] = None
+                try:
+                    # 获取数据库连接
+                    from auth.db import open_db_connection # 使用新的函数
+                    db_conn_upload = open_db_connection() # 直接获取连接
+                    
+                    # 关联每个文件路径与用户
+                    for i, file_path in enumerate(file_paths):
+                        # 使用文件路径作为document_id
+                        document_id = f"{provider_type}_{file_path.name}"
+                        custom_filename = Path(file_path.name).name  # 使用原始文件名
+                        
+                        success = associate_document_with_user(
+                            db_conn_upload, 
+                            user_id, 
+                            document_id, 
+                            custom_filename=custom_filename
+                        )
+                        if success:
+                            logger.info(f"文档 {document_id} 已关联到用户 {user_id}")
+                    
+                except Exception as e:
+                    logger.exception(f"关联文档到用户时出错: {e}")
+                    # 不要因为关联失败而中断上传过程
+                finally:
+                    if db_conn_upload:
+                        db_conn_upload.close()
+            
+            # 清理临时目录代码保持不变
             shutil.rmtree(temp_dir)
             logger.info(f"Cleaned up temporary directory: {temp_dir}")
             return web.json_response({
@@ -272,10 +317,42 @@ async def handle_upload(request: web.Request):
             logger.warning(f"Cleaned up temporary directory due to unhandled error: {temp_dir}")
         return web.HTTPInternalServerError(text="An unexpected error occurred during file upload processing.")
 
+async def handle_auth_status(request: web.Request):
+    """返回当前用户的认证状态信息"""
+    # 获取用户信息（如果已认证）
+    user = request.get("user")
+    user_id = request.get("user_id")
+    
+    if user:
+        return web.json_response({
+            "authenticated": True,
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "role": user.role
+            }
+        })
+    else:
+        return web.json_response({
+            "authenticated": False,
+            "auth_url": "http://127.0.0.1:8765/auth"  # 认证服务的基URL
+        })
 
 # --- Main Application Setup ---
 async def create_app():
     app = web.Application()
+    
+    # 配置CORS
+    cors = aiohttp_cors.setup(app, defaults={
+        "*": aiohttp_cors.ResourceOptions(
+            allow_credentials=True,
+            expose_headers="*",
+            allow_headers="*",
+            allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+        )
+    })
+    
     # Load .env file if not in production
     if not os.environ.get("RUNNING_IN_PRODUCTION"):
         logger.info("Running in development mode, loading from .env file")
@@ -337,10 +414,135 @@ async def create_app():
     rtmt.attach_to_app(app, "/realtime")
     logger.info("Attached WebSocket handler to /realtime")
 
+    # 添加auth路由处理
+    # 由于auth/router.py使用FastAPI定义的路由，我们需要为每个路由创建aiohttp处理程序
+    # 注册端点
+    async def handle_auth_register(request: web.Request) -> web.Response:
+        db_conn: Optional[sqlite3.Connection] = None
+        try:
+            data = await request.json()
+            # 获取数据库连接
+            from auth.db import open_db_connection # 使用新的函数
+            db_conn = open_db_connection() # 直接获取连接
+            
+            from auth import crud, schemas
+            # 检查用户名和邮箱是否已存在
+            db_user_by_email = crud.get_user_by_email(db_conn, email=data.get("email"))
+            if db_user_by_email:
+                return web.json_response(
+                    {"detail": "Email already registered"},
+                    status=400
+                )
+            
+            db_user_by_username = crud.get_user_by_username(db_conn, username=data.get("username"))
+            if db_user_by_username:
+                return web.json_response(
+                    {"detail": "Username already registered"},
+                    status=400
+                )
+            
+            # 创建用户
+            user_create = schemas.UserCreate(
+                username=data.get("username"),
+                email=data.get("email"),
+                password=data.get("password")
+            )
+            created_user = crud.create_user(db=db_conn, user=user_create)
+            if not created_user:
+                return web.json_response(
+                    {"detail": "Could not create user"},
+                    status=500
+                )
+            
+            # 返回用户信息（不包括密码）
+            return web.json_response({
+                "id": created_user.id,
+                "username": created_user.username,
+                "email": created_user.email,
+                "is_active": created_user.is_active,
+                "role": created_user.role,
+                "created_at": created_user.created_at.isoformat() if created_user.created_at else None
+            })
+        except Exception as e:
+            logger.exception(f"注册用户时出错: {e}")
+            return web.json_response(
+                {"detail": f"Registration error: {str(e)}"},
+                status=500
+            )
+        finally:
+            if db_conn:
+                db_conn.close()
+    
+    # 登录端点
+    async def handle_auth_login(request: web.Request) -> web.Response:
+        db_conn: Optional[sqlite3.Connection] = None
+        try:
+            data = await request.json()
+            username = data.get("username")
+            password = data.get("password")
+            
+            # 获取数据库连接
+            from auth.db import open_db_connection # 使用新的函数
+            db_conn = open_db_connection() # 直接获取连接
+            
+            from auth import crud, security
+            # 验证用户
+            user = crud.get_user_by_username(db_conn, username=username)
+            if not user or not security.verify_password(password, user.password_hash):
+                return web.json_response(
+                    {"detail": "Incorrect username or password"},
+                    status=401
+                )
+            
+            # 创建访问令牌
+            from datetime import timedelta
+            access_token_expires = timedelta(minutes=security.ACCESS_TOKEN_EXPIRE_MINUTES)
+            access_token = security.create_access_token(
+                data={"sub": user.username}, expires_delta=access_token_expires
+            )
+            
+            # 返回用户信息
+            return web.json_response({
+                "access_token": access_token,
+                "token_type": "bearer",
+                "user": {
+                    "id": user.id,
+                    "username": user.username,
+                    "email": user.email,
+                    "role": user.role
+                }
+            })
+        except Exception as e:
+            logger.exception(f"用户登录时出错: {e}")
+            return web.json_response(
+                {"detail": f"Login error: {str(e)}"},
+                status=500
+            )
+        finally:
+            if db_conn:
+                db_conn.close()
+    
+    # 添加auth路由
+    auth_register = app.router.add_post("/auth/register", handle_auth_register)
+    auth_login = app.router.add_post("/auth/login", handle_auth_login)
+    
+    # 将auth路由添加到CORS配置
+    cors.add(auth_register)
+    cors.add(auth_login)
+    
+    logger.info("添加了认证路由: /auth/register, /auth/login")
+
     # Add HTTP routes for RAG config and upload
-    app.router.add_post("/rag-config", handle_rag_config)
-    app.router.add_post("/upload", handle_upload)
-    logger.info("Added HTTP routes: /rag-config (POST), /upload (POST)")
+    rag_config_resource = app.router.add_post("/rag-config", handle_rag_config)
+    upload_resource = app.router.add_post("/upload", handle_upload)
+    auth_status_resource = app.router.add_get("/auth-status", handle_auth_status)
+    
+    # 将路由添加到CORS配置
+    cors.add(rag_config_resource)
+    cors.add(upload_resource)
+    cors.add(auth_status_resource)
+    
+    logger.info("Added HTTP routes: /rag-config (POST), /upload (POST), /auth-status (GET)")
 
 
     # Serve static frontend files (assuming frontend build places files in backend/static)
@@ -354,6 +556,13 @@ async def create_app():
         # Serve other static files (JS, CSS, assets)
         app.router.add_static('/', path=static_dir, name='static', show_index=False) # Important: show_index=False
 
+    # 添加：设置认证中间件
+    try:
+        setup_auth_middleware(app)
+        logger.info("已设置认证中间件")
+    except Exception as e:
+        logger.exception(f"设置认证中间件时出错: {e}")
+    
     return app
 
 # --- Application Entry Point ---
