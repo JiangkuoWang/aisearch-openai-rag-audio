@@ -5,8 +5,8 @@ import openai
 import asyncio
 from typing import Any, List, Dict
 
-from rtmt import RTMiddleTier, Tool, ToolResult, ToolResultDirection
-from rag_providers.base import BaseRAGProvider
+from .rtmt import RTMiddleTier, Tool, ToolResult, ToolResultDirection
+from .rag_providers.base import BaseRAGProvider
 
 logger = logging.getLogger(__name__)
 

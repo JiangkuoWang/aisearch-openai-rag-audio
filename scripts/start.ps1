@@ -1,4 +1,4 @@
-./scripts/load_python_env.ps1
+# ./scripts/load_python_env.ps1
 
 Write-Host ""
 Write-Host "Restoring frontend npm packages"
@@ -24,12 +24,16 @@ Write-Host ""
 Write-Host "Starting backend"
 Write-Host ""
 Set-Location ../backend
-$venvPythonPath = "../../.venv/scripts/python.exe"
+Set-Location ../.. # Change to project root
+$venvPythonPath = "./.venv/Scripts/python.exe" # Updated Windows venv Python path
 if (Test-Path -Path "/usr") {
   # fallback to Linux venv path
-  $venvPythonPath = "./.venv/bin/python"
+  $venvPythonPath = "./.venv/bin/python" # Updated Linux venv Python path
 }
-Start-Process -FilePath $venvPythonPath -ArgumentList "-m app" -Wait -NoNewWindow
+$backendHost = "127.0.0.1"
+$backendPort = "8765"
+Write-Host "Starting FastAPI backend on $backendHost`:$backendPort using Uvicorn..."
+Start-Process -FilePath $venvPythonPath -ArgumentList "-m uvicorn app.backend.main:app --host $backendHost --port $backendPort --reload" -Wait -NoNewWindow
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Failed to start backend"
     exit $LASTEXITCODE

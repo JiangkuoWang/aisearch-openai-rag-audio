@@ -43,19 +43,27 @@ export interface AuthResponse {
  * 注册新用户
  */
 export async function register(data: RegisterRequest): Promise<User> {
+  // 确保使用正确的注册端点 /auth/register
   const response = await fetch(`${AUTH_API_URL}/register`, {
-    method: 'POST',
+    method: 'POST', // 确保方法是 POST
     headers: {
-      'Content-Type': 'application/json',
+      'Content-Type': 'application/json', // 确保 Content-Type 是 application/json
     },
-    body: JSON.stringify(data),
+    // 确保请求体是包含 username, email, password 的 JSON 字符串
+    body: JSON.stringify({
+        username: data.username,
+        email: data.email,
+        password: data.password
+    }),
   });
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
+    // 保留错误处理逻辑
+    const errorData = await response.json().catch(() => ({ detail: '注册请求失败' }));
     throw new Error(errorData.detail || '注册失败');
   }
 
+  // 保留成功处理逻辑
   const user = await response.json();
   return user;
 }
@@ -64,12 +72,16 @@ export async function register(data: RegisterRequest): Promise<User> {
  * 用户登录
  */
 export async function login(data: LoginRequest): Promise<User> {
-  const response = await fetch(`${AUTH_API_URL}/login`, {
+  const formData = new URLSearchParams();
+  formData.append('username', data.username);
+  formData.append('password', data.password);
+
+  const response = await fetch(`${AUTH_API_URL}/login/token`, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
+      'Content-Type': 'application/x-www-form-urlencoded',
     },
-    body: JSON.stringify(data),
+    body: formData,
   });
 
   if (!response.ok) {

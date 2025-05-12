@@ -51,7 +51,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const loggedInUser = await authLogin(data);
       setUser(loggedInUser);
     } catch (error) {
-      setError((error as Error).message);
+      setError((error as Error).message || '登录时发生未知错误'); // 移除日志, 保留备用消息
       throw error;
     } finally {
       setIsLoading(false);
@@ -68,7 +68,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       // 注册成功后自动登录
       await login({ username: data.username, password: data.password });
     } catch (error) {
-      setError((error as Error).message);
+      setError((error as Error).message || '注册时发生未知错误'); // 移除日志, 保留备用消息
       throw error;
     } finally {
       setIsLoading(false);

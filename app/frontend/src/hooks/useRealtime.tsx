@@ -1,4 +1,5 @@
 import useWebSocket from "react-use-websocket";
+import { getToken } from "@/lib/auth";
 
 import {
     InputAudioBufferAppendCommand,
@@ -51,14 +52,33 @@ export default function useRealTime({
     onReceivedInputAudioTranscriptionCompleted,
     onReceivedError
 }: Parameters) {
-    const wsEndpoint = useDirectAoaiApi
-        ? `${aoaiEndpointOverride}/openai/realtime?api-key=${aoaiApiKeyOverride}&deployment=${aoaiModelOverride}&api-version=2024-10-01-preview`
-        : `/realtime`;
+    let socketUrl: string | null = null;
+    if (useDirectAoaiApi) {
+        socketUrl = `${aoaiEndpointOverride}/openai/realtime?api-key=${aoaiApiKeyOverride}&deployment=${aoaiModelOverride}&api-version=2024-10-01-preview`;
+    } else {
+        const token = getToken();
+        console.log("Attempting to connect WebSocket. Token:", token); // 调试日志
+        if (token) {
+            socketUrl = `ws://127.0.0.1:8765/realtime?token=${token}`;
+        } else {
+            console.log("No auth token found. WebSocket connection will not be attempted.");
+            // socketUrl remains null
+        }
+    }
 
-    const { sendJsonMessage } = useWebSocket(wsEndpoint, {
-        onOpen: () => onWebSocketOpen?.(),
-        onClose: () => onWebSocketClose?.(),
-        onError: event => onWebSocketError?.(event),
+    const { sendJsonMessage } = useWebSocket(socketUrl, {
+        onOpen: () => {
+            console.log("WebSocket connection opened."); // 保留用于确认连接成功
+            onWebSocketOpen?.();
+        },
+        onClose: () => {
+            console.log("WebSocket connection closed.");
+            onWebSocketClose?.();
+        },
+        onError: event => {
+            console.error("WebSocket error:", event);
+            onWebSocketError?.(event);
+        },
         onMessage: event => onMessageReceived(event),
         shouldReconnect: () => true
     });

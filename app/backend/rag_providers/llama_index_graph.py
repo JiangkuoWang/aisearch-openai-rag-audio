@@ -79,7 +79,7 @@ BACKEND_DIR_PATH = Path(__file__).parent.parent.resolve()
 if str(BACKEND_DIR_PATH) not in sys.path:
     sys.path.append(str(BACKEND_DIR_PATH))
 
-from rag_providers.base import BaseRAGProvider
+from .base import BaseRAGProvider
 
 # --- LlamaIndex Imports ---
 try:
