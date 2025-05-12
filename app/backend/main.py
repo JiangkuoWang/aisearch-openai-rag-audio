@@ -134,7 +134,6 @@ Never read file names, source names, or chunk IDs out loud.
 If using the knowledge base:
 1. Always use the 'search' tool first.
 2. Always use the 'report_grounding' tool to cite sources used.
-3. If the answer isn't in the knowledge base, state that.
         """.strip()
         app.state.rtmt = rtmt_instance
         logger.info("RTMiddleTier initialized and stored in app.state.")
@@ -261,11 +260,24 @@ async def handle_upload_fastapi(
     current_user: UserInDB = Depends(get_current_user)
 ):
     """Handles file uploads to build and activate a RAG provider."""
+    logger.info(f"--- Upload Request Start ---")
+    logger.info(f"Request Headers: {dict(request.headers)}") # Convert headers to dict for cleaner logging
+    logger.info(f"Authenticated User: {current_user.username if current_user else 'None'}")
+    if files:
+        try:
+            filenames = [f.filename for f in files]
+            logger.info(f"Received files parameter with filenames: {filenames}")
+        except Exception as e:
+            logger.error(f"Error accessing filenames from files parameter: {e}")
+    else:
+        logger.warning("Received 'files' parameter is empty or None.")
+
     provider_type = getattr(app.state, "rag_provider_type", "none")
+    logger.info(f"--- Checking RAG provider type: {provider_type} ---")
 
     if provider_type not in ("in_memory", "llama_index"):
-        logger.warning(f"Upload attempt received but RAG type is '{provider_type}'. Ignoring.")
-        raise HTTPException(status_code=400, detail=f"File upload not supported for RAG type '{provider_type}'. Select 'in_memory' or 'llama_index' first via /rag-config.")
+        logger.warning(f"Upload attempt received but RAG provider type is '{provider_type}'. Upload not allowed.")
+        raise HTTPException(status_code=400, detail=f"File upload not supported for RAG provider type '{provider_type}'. Select 'in_memory' or 'llama_index' first via /rag-config.")
 
     temp_dir = Path(tempfile.mkdtemp(prefix="rag_upload_"))
     logger.info(f"Created temporary directory for uploads: {temp_dir}")
@@ -415,18 +427,22 @@ async def handle_upload_fastapi(
             logger.error("Failed to create a RAG provider instance after processing uploads.")
             raise HTTPException(status_code=500, detail="Failed to create RAG provider instance.")
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(f"Unhandled error during file upload processing: {e}")
-        raise HTTPException(status_code=500, detail="An unexpected error occurred during file upload processing.")
+    except HTTPException as http_exc:
+        logger.error(f"HTTPException during upload: Status={http_exc.status_code}, Detail={http_exc.detail}")
+        raise  # Re-raise the captured HTTPException
+    except Exception as e_main: # Use a distinct variable name for the main try-except
+        logger.exception(f"Unhandled exception during main upload processing: {e_main}")
+        # It's important to re-raise or return an appropriate HTTP response
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred during file upload processing: {e_main}")
     finally:
-        if temp_dir.exists():
+        logger.info(f"--- Upload Request End (Attempting Cleanup) ---")
+        # temp_dir should be defined if the code reached this point after its creation
+        if 'temp_dir' in locals() and temp_dir.exists():
             try:
                 shutil.rmtree(temp_dir)
                 logger.info(f"Cleaned up temporary directory: {temp_dir}")
-            except Exception as e:
-                logger.error(f"Failed to clean up temporary directory {temp_dir}: {e}")
+            except Exception as e_cleanup: # Use a different variable name for cleanup exception
+                logger.error(f"Failed to clean up temporary directory {temp_dir}: {e_cleanup}")
 
 
 @app.get("/auth-status")

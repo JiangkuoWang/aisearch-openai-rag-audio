@@ -78,6 +78,12 @@ function AppContent() {
     const { start: startAudioRecording, stop: stopAudioRecording } = useAudioRecorder({ onAudioRecorded: addUserAudio });
 
     const onToggleListening = async () => {
+        // 如果未登录，则打开登录模态框
+        if (!isAuthenticated) {
+            setAuthModalOpen(true);
+            return;
+        }
+
         if (!isRecording) {
             startSession();
             await startAudioRecording();
@@ -122,7 +128,7 @@ function AppContent() {
             // Upload files if needed
             if (ragType !== "none" && files) {
                 const fd = new FormData();
-                Array.from(files).forEach(f => fd.append("file", f));
+                Array.from(files).forEach(f => fd.append("files", f));
                 const uploadResponse = await fetch("/upload", { 
                     method: "POST", 
                     body: fd,
@@ -183,7 +189,15 @@ function AppContent() {
                         )}
                     </Button>
                     <Button
-                        onClick={() => { setDbConnected(!dbConnected); setSidebarOpen(true); }}
+                        onClick={() => {
+                            // 如果未登录，则打开登录模态框
+                            if (!isAuthenticated) {
+                                setAuthModalOpen(true);
+                            } else {
+                                setDbConnected(!dbConnected);
+                                setSidebarOpen(true);
+                            }
+                        }}
                         className={`h-12 w-60 ${dbConnected ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'} text-white rounded-lg transition`}
                     >
                         {dbConnected ? 'Disconnect Database' : 'Connect to database'}
