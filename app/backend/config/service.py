@@ -84,48 +84,31 @@ class ConfigService:
         """
         try:
             api_key = self.get_openai_api_key()
-
-            # 创建代理配置
             http_client_kwargs = {}
-            if self.settings.HTTP_PROXY or self.settings.HTTPS_PROXY or self.settings.ALL_PROXY:
+
+            # 配置代理（如果有）
+            if self.settings.ALL_PROXY:
                 import httpx
-
-                # 优先使用SOCKS5代理
-                if self.settings.ALL_PROXY:
-                    proxy_url = self.settings.ALL_PROXY
-                    logger.info(f"Using ALL_PROXY: {proxy_url}")
-                elif self.settings.HTTPS_PROXY:
-                    proxy_url = self.settings.HTTPS_PROXY
-                    logger.info(f"Using HTTPS_PROXY: {proxy_url}")
-                elif self.settings.HTTP_PROXY:
-                    proxy_url = self.settings.HTTP_PROXY
-                    logger.info(f"Using HTTP_PROXY: {proxy_url}")
-
-                # 创建带有代理的HTTP客户端
                 try:
-                    # 正确创建代理对象 - 传递单个URL字符串而不是字典
-                    proxy = httpx.Proxy(proxy_url)
+                    # 创建代理客户端
+                    proxy = httpx.Proxy(self.settings.ALL_PROXY)
                     transport = httpx.AsyncHTTPTransport(proxy=proxy)
                     http_client = httpx.AsyncClient(transport=transport, timeout=30.0)
                     http_client_kwargs["http_client"] = http_client
-                    logger.info(f"Created custom HTTP client with proxy: {proxy_url}")
-                except Exception as proxy_error:
-                    logger.error(f"Failed to create proxy: {proxy_error}")
-                    # 如果代理创建失败，尝试不使用代理
-                    logger.info("Falling back to direct connection without proxy")
-                    http_client = httpx.AsyncClient(timeout=30.0)
-                    http_client_kwargs["http_client"] = http_client
+                    logger.info("OpenAI client configured with proxy")
+                except Exception as e:
+                    logger.warning(f"Proxy configuration failed, using direct connection: {str(e)}")
 
             # 初始化OpenAI客户端
             self._openai_client = openai.AsyncOpenAI(
                 api_key=api_key,
-                timeout=30.0,  # 增加超时时间
+                timeout=30.0,
                 **http_client_kwargs
             )
-            logger.info("AsyncOpenAI client initialized successfully.")
+            logger.info("AsyncOpenAI client initialized successfully")
             return self._openai_client
         except Exception as e:
-            logger.exception("Failed to initialize AsyncOpenAI client.")
+            logger.error("Failed to initialize AsyncOpenAI client")
             raise ValueError(f"Could not initialize OpenAI client: {e}")
 
     async def close_openai_client(self) -> None:

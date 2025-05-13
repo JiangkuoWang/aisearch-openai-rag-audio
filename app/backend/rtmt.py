@@ -394,25 +394,22 @@ class RTMiddleTier:
         self._pending_tool_calls.clear()
         self._item_to_call_id.clear()
 
-        # Enhanced Proxy Logic: Prioritize SOCKS5 from all_proxy if available
+        # 配置代理连接
         all_proxy_url = os.environ.get('all_proxy') or os.environ.get('ALL_PROXY')
         https_proxy_url = os.environ.get('https_proxy') or os.environ.get('HTTPS_PROXY')
         connector = None
-        proxy_to_use_in_ws_connect = None # Use this only for HTTP proxy fallback
+        proxy_to_use_in_ws_connect = None
 
+        # 优先使用SOCKS5代理
         if all_proxy_url and all_proxy_url.startswith("socks5://") and AIOHTTP_SOCKS_AVAILABLE:
             try:
                 connector = ProxyConnector.from_url(all_proxy_url)
-                ws_logger.logger.info(f"Attempting to use SOCKS5 proxy via all_proxy: {all_proxy_url}")
-            except Exception as e:
-                ws_logger.log_error(f"Failed to create SOCKS5 connector from '{all_proxy_url}': {e}. Falling back.")
-                connector = None # Ensure connector is None if creation failed
+                ws_logger.logger.info("Using SOCKS5 proxy for WebSocket connection")
+            except Exception:
+                connector = None
+        # 回退到HTTP代理
         elif https_proxy_url:
-            # Fallback to HTTP proxy if SOCKS5 is not configured or available
             proxy_to_use_in_ws_connect = https_proxy_url
-            ws_logger.logger.info(f"Attempting to use HTTP proxy via https_proxy: {https_proxy_url}")
-        else:
-            ws_logger.logger.info("No SOCKS5 (all_proxy) or HTTP (https_proxy) environment variable found. Connecting directly.")
 
         # Create ClientSession with connector if SOCKS5 is used, otherwise use default session
         async with aiohttp.ClientSession(connector=connector) as session:
@@ -432,25 +429,34 @@ class RTMiddleTier:
                             while True:
                                 msg_data = await client_ws.receive_text()
 
-                                # 记录收到的消息
-                                try:
-                                    msg_json = json.loads(msg_data)
-                                    msg_type = msg_json.get("type", "unknown")
-                                    ws_logger.log_message_received(msg_type, msg_json)
-                                except json.JSONDecodeError:
-                                    ws_logger.log_message_received("invalid_json", {"raw": msg_data[:100]})
+                                # 仅在调试模式下记录消息详情
+                                if logging.getLogger().getEffectiveLevel() <= logging.DEBUG:
+                                    try:
+                                        msg_json = json.loads(msg_data)
+                                        msg_type = msg_json.get("type", "unknown")
+                                        ws_logger.log_message_received(msg_type, None)
+                                    except json.JSONDecodeError:
+                                        ws_logger.log_message_received("invalid_json", None)
+                                else:
+                                    # 在非调试模式下，仅解析消息类型用于后续处理
+                                    try:
+                                        msg_json = json.loads(msg_data)
+                                        msg_type = msg_json.get("type", "unknown")
+                                    except json.JSONDecodeError:
+                                        msg_type = "unknown"
 
                                 # 处理消息
                                 start_time = time.time()
                                 new_msg_str = await self._process_message_to_server(msg_data, client_ws)
                                 process_time = (time.time() - start_time) * 1000  # 毫秒
 
-                                # 记录性能
-                                ws_logger.log_performance(
-                                    "process_client_message",
-                                    process_time,
-                                    {"message_type": msg_type if 'msg_type' in locals() else "unknown"}
-                                )
+                                # 仅在调试模式下记录性能
+                                if logging.getLogger().getEffectiveLevel() <= logging.DEBUG:
+                                    ws_logger.log_performance(
+                                        "process_client_message",
+                                        process_time,
+                                        {"message_type": msg_type if 'msg_type' in locals() else "unknown"}
+                                    )
 
                                 if new_msg_str is not None:
                                     await target_ws.send_str(new_msg_str)
@@ -467,36 +473,46 @@ class RTMiddleTier:
                         try:
                             async for msg in target_ws: # OpenAI connection still uses aiohttp
                                 if msg.type == aiohttp.WSMsgType.TEXT:
-                                    # 记录收到的消息
-                                    try:
-                                        msg_json = json.loads(msg.data)
-                                        msg_type = msg_json.get("type", "unknown")
-                                        ws_logger.log_message_received(f"openai_{msg_type}", None)
-                                    except json.JSONDecodeError:
-                                        ws_logger.log_message_received("openai_invalid_json", {"raw": msg.data[:100]})
+                                    # 仅在调试模式下记录消息详情
+                                    if logging.getLogger().getEffectiveLevel() <= logging.DEBUG:
+                                        try:
+                                            msg_json = json.loads(msg.data)
+                                            msg_type = msg_json.get("type", "unknown")
+                                            ws_logger.log_message_received(f"openai_{msg_type}", None)
+                                        except json.JSONDecodeError:
+                                            ws_logger.log_message_received("openai_invalid_json", None)
+                                    else:
+                                        # 在非调试模式下，仅解析消息类型用于后续处理
+                                        try:
+                                            msg_json = json.loads(msg.data)
+                                            msg_type = msg_json.get("type", "unknown")
+                                        except json.JSONDecodeError:
+                                            msg_type = "unknown"
 
                                     # 处理消息
                                     start_time = time.time()
                                     new_msg_str = await self._process_message_to_client(msg.data, client_ws, target_ws)
                                     process_time = (time.time() - start_time) * 1000  # 毫秒
 
-                                    # 记录性能
-                                    ws_logger.log_performance(
-                                        "process_server_message",
-                                        process_time,
-                                        {"message_type": msg_type if 'msg_type' in locals() else "unknown"}
-                                    )
+                                    # 仅在调试模式下记录性能
+                                    if logging.getLogger().getEffectiveLevel() <= logging.DEBUG:
+                                        ws_logger.log_performance(
+                                            "process_server_message",
+                                            process_time,
+                                            {"message_type": msg_type if 'msg_type' in locals() else "unknown"}
+                                        )
 
                                     if new_msg_str is not None:
                                         await client_ws.send_text(new_msg_str)
 
-                                        # 记录发送的消息
-                                        try:
-                                            sent_json = json.loads(new_msg_str)
-                                            sent_type = sent_json.get("type", "unknown")
-                                            ws_logger.log_message_sent(sent_type, None)
-                                        except json.JSONDecodeError:
-                                            ws_logger.log_message_sent("invalid_json", {"raw": new_msg_str[:100]})
+                                        # 仅在调试模式下记录发送的消息
+                                        if logging.getLogger().getEffectiveLevel() <= logging.DEBUG:
+                                            try:
+                                                sent_json = json.loads(new_msg_str)
+                                                sent_type = sent_json.get("type", "unknown")
+                                                ws_logger.log_message_sent(sent_type, None)
+                                            except json.JSONDecodeError:
+                                                pass
                                 elif msg.type == aiohttp.WSMsgType.ERROR:
                                     ws_logger.log_error(f'OpenAI WebSocket connection closed with exception {target_ws.exception()!r}')
                                     break

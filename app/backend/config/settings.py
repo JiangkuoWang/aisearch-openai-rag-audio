@@ -33,10 +33,10 @@ class Settings(BaseSettings):
     OPENAI_REALTIME_VOICE_CHOICE: str = "alloy"
 
     # 代理配置
-    # 使用SOCKS5代理
-    HTTP_PROXY: Optional[str] = None  # 暂时禁用，使用ALL_PROXY
-    HTTPS_PROXY: Optional[str] = None  # 暂时禁用，使用ALL_PROXY
+    # 使用SOCKS5代理作为主要代理方式
     ALL_PROXY: Optional[str] = "socks5://127.0.0.1:33211"
+    HTTP_PROXY: Optional[str] = None
+    HTTPS_PROXY: Optional[str] = None
 
     # 数据库配置
     DATABASE_PATH: str = "auth.db"
@@ -75,13 +75,17 @@ class Settings(BaseSettings):
     def setup_proxy_environment(self):
         """设置代理环境变量"""
         try:
-            if self.HTTP_PROXY:
-                os.environ["http_proxy"] = self.HTTP_PROXY
-            if self.HTTPS_PROXY:
-                os.environ["https_proxy"] = self.HTTPS_PROXY
+            # 优先使用ALL_PROXY
             if self.ALL_PROXY:
                 os.environ["all_proxy"] = self.ALL_PROXY
-            logger.info(f"Proxy environment variables set: HTTP={self.HTTP_PROXY}, HTTPS={self.HTTPS_PROXY}, ALL={self.ALL_PROXY}")
+                logger.info("Proxy environment variable set")
+            # 仅在ALL_PROXY未设置时使用HTTP/HTTPS代理
+            elif self.HTTP_PROXY or self.HTTPS_PROXY:
+                if self.HTTP_PROXY:
+                    os.environ["http_proxy"] = self.HTTP_PROXY
+                if self.HTTPS_PROXY:
+                    os.environ["https_proxy"] = self.HTTPS_PROXY
+                logger.info("HTTP/HTTPS proxy environment variables set")
         except Exception as e:
             logger.warning(f"Failed to set proxy environment variables: {e}")
 
