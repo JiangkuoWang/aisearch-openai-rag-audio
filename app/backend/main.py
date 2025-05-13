@@ -18,87 +18,35 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 # 导入配置模块
-try:
-    # 当作为包导入时
-    from app.backend.config import config_service
-    from app.backend.utils import (
-        api_exception_handler,
-        websocket_exception_handler,
-        openai_retry_handler,
-        configure_logging,
-        setup_request_logging,
-        WebSocketLogger
-    )
-except ModuleNotFoundError:
-    # 当直接运行时
-    from config import config_service
-    from utils import (
-        api_exception_handler,
-        websocket_exception_handler,
-        openai_retry_handler,
-        configure_logging,
-        setup_request_logging,
-        WebSocketLogger
-    )
+# 导入配置模块
+from app.backend.config import config_service
+from app.backend.utils import (
+    api_exception_handler,
+    websocket_exception_handler,
+    openai_retry_handler,
+    configure_logging,
+    setup_request_logging,
+    WebSocketLogger
+)
 
 
 # Local imports
-try:
-    # 当作为包导入时
-    from app.backend.auth.router import router as auth_router
-    from app.backend.auth.deps import get_current_user, get_current_user_or_none, get_current_user_from_websocket_query_param
-    from app.backend.auth.schemas import UserInDB
-    from app.backend.auth.models import associate_document_with_user
-    from app.backend.auth.db import open_db_connection
-except ModuleNotFoundError:
-    # 当直接运行时
-    from auth.router import router as auth_router
-    from auth.deps import get_current_user, get_current_user_or_none, get_current_user_from_websocket_query_param
-    from auth.schemas import UserInDB
-    from auth.models import associate_document_with_user
-    from auth.db import open_db_connection
+# Local imports
+from app.backend.auth.router import router as auth_router
+from app.backend.auth.deps import get_current_user, get_current_user_or_none, get_current_user_from_websocket_query_param
+from app.backend.auth.schemas import UserInDB
+from app.backend.auth.models import associate_document_with_user
+from app.backend.auth.db import open_db_connection
 # Assuming RTMiddleTier and BaseRAGProvider are in the same directory or accessible via Python path
 # For BaseRAGProvider, it's used as a type hint in update_rag_provider
-try:
-    # 当作为包导入时
-    from app.backend.rtmt import RTMiddleTier
-    from app.backend.rag_providers.base import BaseRAGProvider
-    from app.backend.rag_providers.in_memory import InMemoryRAGProvider
-    from app.backend.rag_providers.llama_index_graph import LlamaIndexGraphRAGProvider
-    from app.backend.ragtools import attach_rag_tools
-    from app.backend.rag_upload_utils import extract_text, chunk_text
-except ModuleNotFoundError:
-    # 当直接运行时
-    try:
-        from .rtmt import RTMiddleTier
-        from .rag_providers.base import BaseRAGProvider
-        from .rag_providers.in_memory import InMemoryRAGProvider
-        from .rag_providers.llama_index_graph import LlamaIndexGraphRAGProvider
-        from .ragtools import attach_rag_tools
-        from .rag_upload_utils import extract_text, chunk_text
-    except ImportError:
-        # 尝试直接导入
-        try:
-            from rtmt import RTMiddleTier
-            from rag_providers.base import BaseRAGProvider
-            from rag_providers.in_memory import InMemoryRAGProvider
-            from rag_providers.llama_index_graph import LlamaIndexGraphRAGProvider
-            from ragtools import attach_rag_tools
-            from rag_upload_utils import extract_text, chunk_text
-        except ImportError as e:
-            print(f"Error importing local modules: {e}. Ensure rtmt.py, rag_providers/*, ragtools.py, and rag_upload_utils.py are accessible.")
-            # Define placeholders if running in an environment where these are not critical for initial setup
-            class RTMiddleTier:
-                def __init__(self, *args, **kwargs): pass
-                tools: dict = {}
-                system_message: str = ""
-
-            class BaseRAGProvider: pass
-            class InMemoryRAGProvider(BaseRAGProvider): pass
-            class LlamaIndexGraphRAGProvider(BaseRAGProvider): pass
-            def attach_rag_tools(rtmt, provider): pass
-            def extract_text(filename: str, raw: bytes) -> str: return ""
-            def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> List[str]: return []
+# Assuming RTMiddleTier and BaseRAGProvider are in the same directory or accessible via Python path
+# For BaseRAGProvider, it's used as a type hint in update_rag_provider
+from app.backend.rtmt import RTMiddleTier
+from app.backend.rag_providers.base import BaseRAGProvider
+from app.backend.rag_providers.in_memory import InMemoryRAGProvider
+from app.backend.rag_providers.llama_index_graph import LlamaIndexGraphRAGProvider
+from app.backend.ragtools import attach_rag_tools
+from app.backend.rag_upload_utils import extract_text, chunk_text
 
 
 # --- 配置日志系统 ---
@@ -401,15 +349,7 @@ async def handle_upload_fastapi(
             logger.info("InMemoryRAGProvider initialized.")
 
         elif provider_type == "llama_index":
-            try:
-                # 当作为包导入时
-                from app.backend.scripts.create_llama_graph_index import create_graph_index
-            except ModuleNotFoundError:
-                # 当直接运行时
-                try:
-                    from .scripts.create_llama_graph_index import create_graph_index
-                except ImportError:
-                    from scripts.create_llama_graph_index import create_graph_index
+            from app.backend.scripts.create_llama_graph_index import create_graph_index
             llama_index_persist_dir = temp_dir / "llama_index_data"
             llama_index_persist_dir.mkdir(exist_ok=True)
 

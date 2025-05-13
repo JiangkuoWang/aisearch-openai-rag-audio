@@ -8,7 +8,7 @@ import codecs
 ENCODING = "utf-8"
 
 def force_utf8():
-    print(f"Attempting to force Python default encoding to {ENCODING}...")
+    # print(f"Attempting to force Python default encoding to {ENCODING}...")
     try:
         # 1. Set locale environment variables
         os.environ['LANG'] = f'en_US.{ENCODING}'
@@ -157,15 +157,14 @@ def fixed_spgs_persist(self, persist_path: str, fs: fsspec.AbstractFileSystem = 
 # --- Original Imports Start Here ---
 import logging
 import openai
-from dotenv import load_dotenv
+# from dotenv import load_dotenv # Removed
 from pathlib import Path
 import json
+from app.backend.config import config_service
 
 # Ensure backend directory is in path for potential sibling imports if needed later
 SCRIPT_DIR_PATH = Path(__file__).parent.resolve()
 BACKEND_DIR_PATH = SCRIPT_DIR_PATH.parent
-if str(BACKEND_DIR_PATH) not in sys.path:
-    sys.path.append(str(BACKEND_DIR_PATH))
 
 # --- LlamaIndex Imports ---
 # Attempt imports and provide guidance if missing
@@ -233,29 +232,31 @@ except Exception as e:
     sys.exit(1)
 
 # --- Configuration ---
-ENV_PATH = BACKEND_DIR_PATH / ".env"
+# ENV_PATH = BACKEND_DIR_PATH / ".env" # Removed
 
-print(f"Loading environment variables from: {ENV_PATH}")
-if not ENV_PATH.exists():
-    print(f"Warning: .env file not found at {ENV_PATH}. Relying on existing environment variables.")
-load_dotenv(dotenv_path=ENV_PATH)
+# print(f"Loading environment variables from: {ENV_PATH}") # Removed
+# if not ENV_PATH.exists(): # Removed
+#     print(f"Warning: .env file not found at {ENV_PATH}. Relying on existing environment variables.") # Removed
+# load_dotenv(dotenv_path=ENV_PATH) # Removed
 
-# Paths from .env
-DATA_SOURCE_DIR = BACKEND_DIR_PATH / os.environ.get("DATA_SOURCE_DIR", "../../data")
-LLAMA_GRAPH_INDEX_DIR = BACKEND_DIR_PATH / os.environ.get("LLAMA_GRAPH_INDEX_DIR", "rag_data/llama_graph_index")
+# Paths from config_service, resolved relative to BACKEND_DIR_PATH
+DATA_SOURCE_DIR = (BACKEND_DIR_PATH / config_service.settings.DATA_SOURCE_DIR_RELATIVE).resolve()
+LLAMA_GRAPH_INDEX_DIR = (BACKEND_DIR_PATH / config_service.settings.LLAMA_GRAPH_INDEX_DIR_RELATIVE).resolve()
 
 # Ensure output directory exists
 LLAMA_GRAPH_INDEX_DIR.mkdir(parents=True, exist_ok=True)
 
 # OpenAI Config
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
-    raise ValueError("OPENAI_API_KEY not found.")
+OPENAI_API_KEY_SECRET = config_service.settings.OPENAI_API_KEY
+if not OPENAI_API_KEY_SECRET: # Keep this check as API key is crucial
+    raise ValueError("OPENAI_API_KEY not found in config_service.settings.")
+OPENAI_API_KEY = OPENAI_API_KEY_SECRET.get_secret_value() if OPENAI_API_KEY_SECRET else None
+
 
 # LLM for extraction
-LLAMA_EXTRACTION_LLM_MODEL = os.environ.get("LLAMA_EXTRACTION_LLM_MODEL", "gpt-4o") # Use a capable model for extraction
+LLAMA_EXTRACTION_LLM_MODEL = config_service.settings.LLAMA_EXTRACTION_LLM_MODEL
 # Embedding model (LlamaIndex defaults often require one, even if retrieval avoids it)
-OPENAI_EMBEDDING_MODEL = os.environ.get("OPENAI_EMBEDDING_MODEL", "text-embedding-3-large")
+OPENAI_EMBEDDING_MODEL = config_service.settings.OPENAI_EMBEDDING_MODEL
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

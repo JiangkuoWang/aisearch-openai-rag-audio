@@ -3,42 +3,42 @@ import json
 import numpy as np
 import openai
 import asyncio # Required for potential async operations if needed later, though embedding is sync
-from dotenv import load_dotenv
+# from dotenv import load_dotenv # Removed
 import logging
 import time
 from pypdf import PdfReader # Added
 import sys # Added to adjust path for sibling imports if needed
+from app.backend.config import config_service # Added
+from pathlib import Path # Added
 
 # --- Configuration ---
 # Determine the script's directory and the backend directory
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-BACKEND_DIR = os.path.dirname(SCRIPT_DIR) # Assumes script is in app/backend/scripts
+SCRIPT_DIR = Path(__file__).parent.resolve()
+BACKEND_DIR = SCRIPT_DIR.parent # Assumes script is in app/backend/scripts
 
-# Path to the .env file in the backend directory
-ENV_PATH = os.path.join(BACKEND_DIR, ".env")
+# Path to the .env file in the backend directory - Removed
+# ENV_PATH = os.path.join(BACKEND_DIR, ".env") # Removed
 
-# Load environment variables BEFORE accessing them
-print(f"Loading environment variables from: {ENV_PATH}")
-if not os.path.exists(ENV_PATH):
-    print(f"Warning: .env file not found at {ENV_PATH}. Relying on existing environment variables.")
-load_dotenv(dotenv_path=ENV_PATH)
+# Load environment variables BEFORE accessing them - Removed
+# print(f"Loading environment variables from: {ENV_PATH}") # Removed
+# if not os.path.exists(ENV_PATH): # Removed
+#     print(f"Warning: .env file not found at {ENV_PATH}. Relying on existing environment variables.") # Removed
+# load_dotenv(dotenv_path=ENV_PATH) # Removed
 
-# Get paths from environment variables with defaults
-DEFAULT_DATA_SOURCE_DIR = os.path.abspath(os.path.join(BACKEND_DIR, "..", "..", "data")) # Default ../../data relative to backend
-DATA_SOURCE_DIR = os.path.abspath(os.path.join(BACKEND_DIR, os.environ.get("DATA_SOURCE_DIR", "../../data"))) # Use env var relative to backend
+# Get paths from config_service, resolved relative to BACKEND_DIR
+DATA_SOURCE_DIR = (BACKEND_DIR / config_service.settings.DATA_SOURCE_DIR_RELATIVE).resolve()
+# RAG_DATA_DIR is not directly used for output files, but individual file paths are constructed
+# RAG_DATA_DIR = (BACKEND_DIR / config_service.settings.RAG_DATA_DIR_RELATIVE).resolve() # Not strictly needed if specific file paths are used
 
-DEFAULT_RAG_DATA_DIR = os.path.join(BACKEND_DIR, "rag_data")
-RAG_DATA_DIR = os.path.abspath(os.path.join(BACKEND_DIR, os.environ.get("RAG_DATA_DIR", "./rag_data"))) # Use env var relative to backend
-
-OUTPUT_METADATA_FILE = os.path.abspath(os.path.join(BACKEND_DIR, os.environ.get("RAG_METADATA_FILE", "./rag_data/rag_data.jsonl")))
-OUTPUT_VECTOR_FILE = os.path.abspath(os.path.join(BACKEND_DIR, os.environ.get("RAG_VECTOR_FILE", "./rag_data/rag_vectors.npy")))
+OUTPUT_METADATA_FILE = (BACKEND_DIR / config_service.settings.RAG_METADATA_FILE_RELATIVE).resolve()
+OUTPUT_VECTOR_FILE = (BACKEND_DIR / config_service.settings.RAG_VECTOR_FILE_RELATIVE).resolve()
 
 # Ensure the output directory exists
-os.makedirs(os.path.dirname(OUTPUT_METADATA_FILE), exist_ok=True)
+Path(OUTPUT_METADATA_FILE).parent.mkdir(parents=True, exist_ok=True)
+Path(OUTPUT_VECTOR_FILE).parent.mkdir(parents=True, exist_ok=True) # Also ensure vector file's parent dir
 
 # Embedding model config
-DEFAULT_EMBEDDING_MODEL = "text-embedding-3-large"
-EMBEDDING_MODEL = os.environ.get("OPENAI_EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL)
+EMBEDDING_MODEL = config_service.settings.OPENAI_EMBEDDING_MODEL
 
 # Get dimension for the chosen model
 MODEL_DIMENSIONS = {
@@ -49,7 +49,7 @@ MODEL_DIMENSIONS = {
 EMBEDDING_DIM = MODEL_DIMENSIONS.get(EMBEDDING_MODEL)
 if EMBEDDING_DIM is None:
      # Fallback or error if model not in dict
-     print(f"Warning: Unknown embedding model '{EMBEDDING_MODEL}'. Using default dimension 1536. Add model to MODEL_DIMENSIONS if needed.")
+     print(f"Warning: Unknown embedding model '{EMBEDDING_MODEL}' from config_service.settings. Using default dimension 1536. Add model to MODEL_DIMENSIONS if needed.")
      EMBEDDING_DIM = 1536
 
 
@@ -66,9 +66,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # --- Initialize OpenAI Client ---
-api_key = os.environ.get("OPENAI_API_KEY")
-if not api_key:
-    raise ValueError(f"OPENAI_API_KEY not found in environment variables. Make sure it's set in {ENV_PATH}")
+api_key_secret = config_service.settings.OPENAI_API_KEY
+if not api_key_secret:
+    raise ValueError("OPENAI_API_KEY not found in config_service.settings.")
+api_key = api_key_secret.get_secret_value() if api_key_secret else None
 
 client = openai.OpenAI(api_key=api_key, timeout=REQUEST_TIMEOUT)
 

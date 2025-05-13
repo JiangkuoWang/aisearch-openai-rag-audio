@@ -49,8 +49,11 @@ class ConfigService:
             openai_api_key = openai_api_key_env
         else:
             # 回退到配置中的API密钥
-            openai_api_key = self.settings.OPENAI_API_KEY.get_secret_value()
-            logger.info("使用配置中的 OPENAI_API_KEY")
+            if self.settings.OPENAI_API_KEY:
+                openai_api_key = self.settings.OPENAI_API_KEY.get_secret_value()
+                logger.info("使用配置中的 OPENAI_API_KEY")
+            else:
+                openai_api_key = None # 明确设置为 None 如果 settings 中也没有
 
         # 验证API密钥
         if not openai_api_key or openai_api_key.startswith("sk-your-"):

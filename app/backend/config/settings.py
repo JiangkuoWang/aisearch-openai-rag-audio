@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"  # development, production, testing
 
     # 安全配置
-    SECRET_KEY: str = Field("your-super-secret-key-for-development-only", env="SECRET_KEY")
+    SECRET_KEY: Optional[str] = Field(None, env="SECRET_KEY")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
 
     # CORS配置
@@ -27,10 +27,11 @@ class Settings(BaseSettings):
     CORS_ORIGINS: List[str] = ["http://localhost:8765", "http://127.0.0.1:8765", "http://localhost:5173"]
 
     # OpenAI配置
-    OPENAI_API_KEY: SecretStr = Field("sk-your-openai-api-key-here", env="OPENAI_API_KEY")
+    OPENAI_API_KEY: Optional[SecretStr] = Field(None, env="OPENAI_API_KEY")
     OPENAI_REALTIME_MODEL: str = "gpt-4o-realtime-preview"
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-large"
     OPENAI_REALTIME_VOICE_CHOICE: str = "alloy"
+    LLAMA_EXTRACTION_LLM_MODEL: str = "gpt-4o" # For LlamaIndex graph creation
 
     # 代理配置
     # 使用SOCKS5代理作为主要代理方式
@@ -39,11 +40,21 @@ class Settings(BaseSettings):
     HTTPS_PROXY: Optional[str] = None
 
     # 数据库配置
-    DATABASE_PATH: str = "auth.db"
+    DATABASE_PATH: Path = Path("auth.db")
 
     # 文件存储配置
     BACKEND_DIR: Path = Field(default_factory=lambda: Path(__file__).parent.parent.resolve())
     STATIC_DIR: Path = Field(default_factory=lambda: Path(__file__).parent.parent / "static")
+
+    # RAG和脚本相关路径配置 (相对于 BACKEND_DIR)
+    # 这些路径主要由 app/backend/scripts/ 下的脚本使用
+    # 默认值基于之前的脚本实现
+    DATA_SOURCE_DIR_RELATIVE: str = "../../data"
+    RAG_DATA_DIR_RELATIVE: str = "rag_data" # General directory for RAG outputs
+    LLAMA_GRAPH_INDEX_DIR_RELATIVE: str = "rag_data/llama_graph_index"
+    RAG_METADATA_FILE_RELATIVE: str = "rag_data/rag_data.jsonl" # For in-memory index
+    RAG_VECTOR_FILE_RELATIVE: str = "rag_data/rag_vectors.npy"   # For in-memory index
+
 
     # 验证器和辅助方法
     @field_validator("CORS_ORIGINS", mode="before")

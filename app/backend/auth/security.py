@@ -5,16 +5,7 @@ from typing import Optional
 from jose import JWTError, jwt
 
 from . import schemas # 从同级目录导入 schemas，用于 TokenData
-try:
-    # 当作为包导入时
-    from app.backend.config import config_service # 导入配置服务
-except ModuleNotFoundError:
-    # 当直接运行时
-    import sys
-    import os
-    # 添加项目根目录到Python路径
-    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
-    from config import config_service # 导入配置服务
+from app.backend.config import config_service # 导入配置服务
 
 
 # 配置密码哈希上下文，推荐使用 bcrypt
@@ -49,6 +40,10 @@ def get_password_hash(password: str) -> str:
 
 # 从配置服务加载安全配置
 SECRET_KEY = config_service.settings.SECRET_KEY
+if SECRET_KEY is None:
+    raise ValueError(
+        "SECRET_KEY 未在环境变量中设置。认证功能需要 SECRET_KEY，请务必配置。"
+    )
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = config_service.settings.ACCESS_TOKEN_EXPIRE_MINUTES
 

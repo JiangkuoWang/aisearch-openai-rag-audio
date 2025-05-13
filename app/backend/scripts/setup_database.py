@@ -1,14 +1,15 @@
 import sqlite3
 import os
 
-# 定义数据库文件的名字和路径
-# 你可以根据你的项目结构调整 '..', 'data', 'voice_rag_auth.db'
-# 这里假设脚本在 app/backend/scripts/ 目录下，数据库文件想放在项目根目录下的 data/ 文件夹中
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # 项目根目录
-DATA_DIR = os.path.join(BASE_DIR, 'data')
-DB_FILE = os.path.join(DATA_DIR, 'voice_rag_auth.db')
+from app.backend.config import config_service # Added
+from pathlib import Path # Added
 
-def create_connection(db_file_path):
+# 定义数据库文件的名字和路径
+# 从 config_service 获取数据库路径
+DB_FILE_PATH = config_service.settings.DATABASE_PATH.resolve()
+
+
+def create_connection(db_file_path: Path): # Changed type hint
     """ 创建一个数据库连接到SQLite数据库 """
     conn = None
     try:
@@ -108,7 +109,7 @@ def main():
     # """
 
     # 创建数据库连接
-    conn = create_connection(DB_FILE)
+    conn = create_connection(DB_FILE_PATH) # Use DB_FILE_PATH from config
 
     if conn is not None:
         # 创建表
@@ -132,7 +133,7 @@ def main():
 
         # 关闭连接
         conn.close()
-        print(f"Database setup complete. Database file at: {DB_FILE}")
+        print(f"Database setup complete. Database file at: {DB_FILE_PATH}") # Use DB_FILE_PATH
     else:
         print("Error! Cannot create the database connection.")
 
