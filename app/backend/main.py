@@ -33,7 +33,7 @@ from app.backend.utils import (
 # Local imports
 # Local imports
 from app.backend.auth.router import router as auth_router
-from app.backend.auth.deps import get_current_user, get_current_user_or_none, get_current_user_from_websocket_query_param
+from app.backend.auth.deps import get_current_user, get_current_user_or_none, get_current_user_from_websocket_header
 from app.backend.auth.schemas import UserInDB
 from app.backend.auth.models import associate_document_with_user
 from app.backend.auth.db import open_db_connection
@@ -448,7 +448,7 @@ async def handle_auth_status_fastapi(
 @websocket_exception_handler
 async def websocket_realtime_endpoint(
     websocket: WebSocket,
-    current_user: Optional[UserInDB] = Depends(get_current_user_from_websocket_query_param)
+    current_user: Optional[UserInDB] = Depends(get_current_user_from_websocket_header)
 ):
     # 创建WebSocket日志记录器
     ws_logger = WebSocketLogger(

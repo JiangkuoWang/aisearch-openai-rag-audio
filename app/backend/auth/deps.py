@@ -57,33 +57,44 @@ async def get_current_user_or_none(token: Optional[str] = Depends(oauth2_scheme)
         logger.debug(f"HTTPException during optional auth: {e.detail}")
         return None
 
-async def get_current_user_from_websocket_query_param(
+async def get_current_user_from_websocket_header( # Renamed function
     websocket: WebSocket,
-    # Removed token parameter from signature, will get it directly from websocket object
     db = Depends(open_db_connection)
 ) -> Optional[UserInDB]:
-    logger.debug(f"Attempting WebSocket authentication. URL: {websocket.url}")
-    # Get token directly from query parameters inside the function
-    token = websocket.query_params.get("token")
+    logger.debug(f"Attempting WebSocket authentication via headers. URL: {websocket.url}")
+    
+    token: Optional[str] = None
+    auth_header_found = False
+    # Headers in ASGI scope are list of (byte_string_key, byte_string_value)
+    for name, value in websocket.scope.get("headers", []):
+        if name.lower() == b"authorization":
+            auth_header_found = True
+            header_value_str = value.decode("utf-8")
+            parts = header_value_str.split()
+            if len(parts) == 2 and parts[0].lower() == "bearer":
+                token = parts[1]
+                logger.debug(f"Extracted token from Authorization header: {token[:10]}...") # Log only prefix
+            else:
+                logger.warning(f"Malformed Authorization header found: {header_value_str}")
+            break # Found Authorization header, no need to continue loop
 
+    if not auth_header_found:
+        logger.warning("WebSocket connection attempt without 'Authorization' header.")
+        return None
     if not token:
-        logger.warning("WebSocket connection attempt without 'token' query parameter.")
+        logger.warning("WebSocket 'Authorization' header present but no Bearer token found or malformed.")
         return None
 
-    logger.debug(f"Extracted token from query param: {token[:10]}...") # Log only prefix for security
-
     try:
-        # Define credentials_exception inside try block as it's only needed on failure path
         credentials_exception = HTTPException(
             status_code=status.WS_1008_POLICY_VIOLATION, # WebSocket specific status code
-            detail="Could not validate credentials from query parameter",
+            detail="Could not validate credentials from Authorization header",
         )
 
         logger.debug("Calling verify_token_and_get_data...")
         token_data = verify_token_and_get_data(token, credentials_exception)
 
         if not token_data:
-            # This case might be less likely if verify_token_and_get_data raises exceptions properly
             logger.warning("verify_token_and_get_data returned None without raising exception.")
             return None
 
@@ -93,25 +104,21 @@ async def get_current_user_from_websocket_query_param(
         user = crud.get_user_by_username(db, username=token_data.username)
 
         if user:
-            logger.info(f"Successfully authenticated WebSocket user: {user.username} (ID: {user.id})")
+            logger.info(f"Successfully authenticated WebSocket user via header: {user.username} (ID: {user.id})")
             return user
         else:
             logger.error(f"User '{token_data.username}' found in token but not in DB.")
             return None
 
     except ExpiredSignatureError:
-        logger.warning("WebSocket token validation failed: ExpiredSignatureError")
+        logger.warning("WebSocket token validation failed (header auth): ExpiredSignatureError")
         return None
-    # Removed specific catch for InvalidSignatureError
     except JWTError as e:
-        # Log the specific type of JWTError encountered
-        logger.warning(f"WebSocket token validation failed: {type(e).__name__}: {e}")
+        logger.warning(f"WebSocket token validation failed (header auth): {type(e).__name__}: {e}")
         return None
-    except HTTPException as e: # If verify_token_and_get_data raises HTTP exception
-        logger.warning(f"WebSocket token validation failed due to HTTPException: {e.detail} (Status: {e.status_code})")
-        # The endpoint should handle this by closing the WebSocket.
-        # Returning None means the endpoint will see it as unauthenticated.
+    except HTTPException as e:
+        logger.warning(f"WebSocket token validation failed due to HTTPException (header auth): {e.detail} (Status: {e.status_code})")
         return None
     except Exception as e:
-        logger.exception(f"Unexpected error during WebSocket authentication: {e}")
+        logger.exception(f"Unexpected error during WebSocket authentication (header auth): {e}")
         return None
