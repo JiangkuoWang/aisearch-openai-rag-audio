@@ -11,3 +11,9 @@ websocket-client
 pypdf
 PyPDF2
 python-docx
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+python-jose[cryptography]
+passlib[bcrypt]
+aiohttp
+aiohttp-socks

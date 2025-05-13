@@ -5,6 +5,7 @@ from typing import Optional
 from jose import JWTError, jwt
 
 from . import schemas # 从同级目录导入 schemas，用于 TokenData
+from app.backend.config import settings # 导入配置模块
 
 
 # 配置密码哈希上下文，推荐使用 bcrypt
@@ -37,12 +38,10 @@ def get_password_hash(password: str) -> str:
 
 # --- JWT 令牌部分 --- #
 
-# !!! 安全警告: SECRET_KEY 绝对不应该硬编码在生产代码中 !!!
-# 应该从环境变量或其他安全配置中加载。
-# 为了演示，我们暂时在这里定义它。
-SECRET_KEY = "your-super-secret-and-long-random-string-please-change-me"
+# 从配置模块加载安全配置
+SECRET_KEY = settings.SECRET_KEY
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30  # 访问令牌30分钟后过期
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """

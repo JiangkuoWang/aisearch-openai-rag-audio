@@ -1,21 +1,23 @@
 import logging
 import os
 from pathlib import Path
-import json # Added
-import tempfile # Added
-import shutil # Added
-import asyncio # Added
-from typing import Optional, List, Dict, Any # List, Dict, Any Added
+import json
+import tempfile
+import shutil
+import asyncio
+from typing import Optional, List, Dict, Any
 
 import openai
 import uvicorn
-import numpy as np # Added
-from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Depends, Request, File, UploadFile, WebSocket, WebSocketDisconnect, status # Request, File, UploadFile, Depends Added. WebSocket, WebSocketDisconnect, status Added
-from fastapi.responses import JSONResponse, FileResponse # Added FileResponse
-from pydantic import BaseModel # Added
+import numpy as np
+from fastapi import FastAPI, HTTPException, Depends, Request, File, UploadFile, WebSocket, WebSocketDisconnect, status
+from fastapi.responses import JSONResponse, FileResponse
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+
+# 导入配置模块
+from app.backend.config import settings
 
 
 # Local imports
@@ -50,12 +52,12 @@ except ImportError as e:
 
 
 # --- Logging Configuration ---
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG if settings.DEBUG else logging.INFO)
 logger = logging.getLogger("voicerag")
 
 # --- Backend Directory ---
-BACKEND_DIR = Path(__file__).parent.resolve()
-STATIC_DIR = BACKEND_DIR / "static"
+BACKEND_DIR = settings.BACKEND_DIR
+STATIC_DIR = settings.STATIC_DIR
 
 # --- FastAPI Application Instance ---
 app = FastAPI()
@@ -89,24 +91,26 @@ def update_rag_provider(current_app: FastAPI, rag_provider: Optional[BaseRAGProv
 # --- Application Startup Logic ---
 @app.on_event("startup")
 async def startup_event():
-    # Load .env file if not in production
-    if not os.environ.get("RUNNING_IN_PRODUCTION"):
-        logger.info("Running in development mode, loading from .env file")
-        env_path = BACKEND_DIR / ".env"
-        if env_path.is_file():
-            load_dotenv(dotenv_path=env_path)
-            logger.info(f"Loaded environment variables from: {env_path}")
-        else:
-            logger.warning(f".env file not found at {env_path}, relying on existing environment variables.")
+    # 使用配置模块
+    logger.info(f"Running in {settings.ENVIRONMENT} environment")
 
     # --- Load OpenAI Configuration ---
-    openai_api_key = os.environ.get("OPENAI_API_KEY")
-    openai_model_name = os.environ.get("OPENAI_REALTIME_MODEL", "gpt-4o-realtime-preview")
-    openai_embedding_model_name = os.environ.get("OPENAI_EMBEDDING_MODEL", "text-embedding-3-large")
+    # 尝试从环境变量获取 API 密钥
+    openai_api_key_env = os.environ.get("OPENAI_API_KEY")
+    if openai_api_key_env:
+        openai_api_key = openai_api_key_env
+        logger.info("使用环境变量中的 OPENAI_API_KEY")
+    else:
+        # 回退到配置中的 API 密钥
+        openai_api_key = settings.OPENAI_API_KEY.get_secret_value()
+        logger.info("使用配置中的 OPENAI_API_KEY")
 
-    if not openai_api_key:
-        logger.error("OPENAI_API_KEY environment variable not set.")
-        raise ValueError("OPENAI_API_KEY environment variable not set.")
+    openai_model_name = settings.OPENAI_REALTIME_MODEL
+    openai_embedding_model_name = settings.OPENAI_EMBEDDING_MODEL
+
+    if not openai_api_key or openai_api_key.startswith("sk-your-"):
+        logger.error("有效的 OPENAI_API_KEY 未设置。请在 .env 文件或环境变量中设置有效的 API 密钥。")
+        raise ValueError("有效的 OPENAI_API_KEY 未设置。请在 .env 文件或环境变量中设置有效的 API 密钥。")
 
     # --- Initialize OpenAI Async Client and store in app.state ---
     try:
@@ -124,7 +128,7 @@ async def startup_event():
         rtmt_instance = RTMiddleTier(
             openai_api_key=openai_api_key,
             model=openai_model_name,
-            voice_choice=os.environ.get("OPENAI_REALTIME_VOICE_CHOICE") or "alloy"
+            voice_choice=settings.OPENAI_REALTIME_VOICE_CHOICE
         )
         # Configure System Prompt for RTMiddleTier
         rtmt_instance.system_message = """
@@ -147,27 +151,8 @@ If using the knowledge base:
     logger.info("FastAPI application startup sequence complete.") # Added log message
 
 # --- CORS Configuration ---
-origins = [
-    "http://localhost:8765",
-    "http://127.0.0.1:8765",
-    "http://localhost:5173",  # 保留旧的前端开发服务器源以实现兼容性
-]
-# 检查环境变量是否覆盖
-env_origins_str = os.environ.get("FRONTEND_URL")
-if env_origins_str:
-    logger.info(f"Overriding CORS origins with FRONTEND_URL: {env_origins_str}")
-    origins = [origin.strip() for origin in env_origins_str.split(",")]
-
-# 处理 "*" 通配符的特殊情况
-if "*" in origins and len(origins) > 1:
-    logger.warning("CORS allow_origins contains '*' along with specific origins. Using '*' only for maximum permissiveness as per configuration.")
-    origins = ["*"]
-elif not origins: # 如果环境变量为空或未设置，则使用默认值
-    logger.warning("FRONTEND_URL was empty or not set, and no default origins were added. Falling back to restrictive defaults.")
-    origins = [
-        "http://localhost:8765", # 确保新的默认值包含这些
-        "http://127.0.0.1:8765",
-    ]
+origins = settings.get_cors_origins()
+logger.info(f"CORS origins configured: {origins}")
 
 
 app.add_middleware(
@@ -234,7 +219,7 @@ async def handle_rag_config_fastapi(request: Request, config_request: RAGConfigR
 
         app.state.rag_provider_type = provider_type
         logger.info(f"RAG provider type set to: {provider_type}")
-        
+
         # For now, user_id is not handled here as per simplification instructions
         # We can add Optional[UserInDB] = Depends(get_current_user_or_none) later if needed
         user_id = None # Placeholder
@@ -304,12 +289,12 @@ async def handle_upload_fastapi(
                 if not extracted_text:
                     logger.warning(f"No text extracted from {file.filename}, skipping.")
                     continue
-                
+
                 chunks = chunk_text(extracted_text)
                 if not chunks:
                     logger.warning(f"No chunks created from {file.filename}, skipping.")
                     continue
-                
+
                 logger.info(f"Extracted and chunked {file.filename} into {len(chunks)} chunks.")
                 texts.extend(chunks)
                 titles.extend([file.filename] * len(chunks))
@@ -337,7 +322,7 @@ async def handle_upload_fastapi(
             if not isinstance(openai_client, openai.AsyncOpenAI):
                 logger.error("OpenAI client is not async, cannot await.")
                 raise HTTPException(status_code=500, detail="Internal configuration error (OpenAI client type).")
-            
+
             response = await openai_client.embeddings.create(input=texts, model=embedding_model)
             vectors = np.array([item.embedding for item in response.data], dtype=np.float32)
             logger.info(f"Generated {vectors.shape[0]} embeddings with dimension {vectors.shape[1]}.")
@@ -364,20 +349,20 @@ async def handle_upload_fastapi(
             except Exception as e:
                 logger.exception("Failed to initialize InMemoryRAGProvider")
                 raise HTTPException(status_code=500, detail="Failed to initialize In-Memory RAG provider.")
-        
+
         elif provider_type == "llama_index":
             try:
                 from .scripts.create_llama_graph_index import create_graph_index # Ensure correct import path
                 llama_index_persist_dir = temp_dir / "llama_index_data"
                 llama_index_persist_dir.mkdir(exist_ok=True)
-                
+
                 # Run create_graph_index in a thread pool
                 index = await asyncio.to_thread(
                     create_graph_index,
                     source_dir=str(temp_dir), # Pass the directory containing processed files
                     index_dir=str(llama_index_persist_dir)
                 )
-            
+
                 retriever = index.as_retriever(similarity_top_k=5)
                 new_provider = LlamaIndexGraphRAGProvider(
                     openai_client=openai_client,
@@ -396,7 +381,7 @@ async def handle_upload_fastapi(
         if new_provider:
             update_rag_provider(app, new_provider)
             logger.info(f"Successfully activated {provider_type} RAG provider with uploaded data.")
-            
+
             user_id = current_user.id
             db_conn_upload = None
             try:
@@ -404,7 +389,7 @@ async def handle_upload_fastapi(
                 for i, file_path_obj in enumerate(file_paths): # Iterate over Path objects
                     original_filename = files[i].filename # Get original filename from UploadFile
                     document_id = f"{provider_type}_{original_filename}_{user_id}_{i}" # More unique ID
-                    
+
                     success = associate_document_with_user(
                         db_conn_upload,
                         user_id,
@@ -418,7 +403,7 @@ async def handle_upload_fastapi(
             finally:
                 if db_conn_upload:
                     db_conn_upload.close()
-            
+
             return JSONResponse({
                 "status": "ok",
                 "message": f"{provider_type} RAG provider activated with {len(texts)} chunks from {len(files)} files."
@@ -533,7 +518,7 @@ else:
 async def shutdown_event():
     """Handles application shutdown tasks."""
     logger.info("FastAPI application initiating shutdown...")
-    
+
     # Attempt to close OpenAI client if it exists and has a close method
     openai_client = getattr(app.state, "openai_client", None)
     if openai_client and hasattr(openai_client, "close") and asyncio.iscoroutinefunction(openai_client.close):
@@ -550,13 +535,14 @@ async def shutdown_event():
             logger.error(f"Error closing OpenAI client (sync close attempted): {e}")
     else:
         logger.info("OpenAI client not found or does not have a close method.")
-        
+
     logger.info("FastAPI application shutdown complete.")
 
 # --- Application Entry Point (for uvicorn) ---
 if __name__ == "__main__":
-    host = os.environ.get("BACKEND_HOST", "127.0.0.1")
-    port = int(os.environ.get("BACKEND_PORT", 8765))
+    host = settings.BACKEND_HOST
+    port = settings.BACKEND_PORT
+    reload = settings.DEBUG  # 在开发环境中启用热重载
 
     logger.info(f"Starting FastAPI application server with Uvicorn on http://{host}:{port}")
-    uvicorn.run("main:app", host=host, port=port, reload=True) # Added reload=True for dev
+    uvicorn.run("main:app", host=host, port=port, reload=reload)
