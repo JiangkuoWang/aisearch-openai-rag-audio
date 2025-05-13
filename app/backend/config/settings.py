@@ -33,8 +33,9 @@ class Settings(BaseSettings):
     OPENAI_REALTIME_VOICE_CHOICE: str = "alloy"
 
     # 代理配置
-    HTTP_PROXY: Optional[str] = "http://127.0.0.1:33210"
-    HTTPS_PROXY: Optional[str] = "http://127.0.0.1:33210"
+    # 使用SOCKS5代理
+    HTTP_PROXY: Optional[str] = None  # 暂时禁用，使用ALL_PROXY
+    HTTPS_PROXY: Optional[str] = None  # 暂时禁用，使用ALL_PROXY
     ALL_PROXY: Optional[str] = "socks5://127.0.0.1:33211"
 
     # 数据库配置

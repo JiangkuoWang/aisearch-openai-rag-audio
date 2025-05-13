@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 from pathlib import Path
 import json
 import tempfile
@@ -20,11 +21,25 @@ from fastapi.staticfiles import StaticFiles
 try:
     # 当作为包导入时
     from app.backend.config import config_service
-    from app.backend.utils import api_exception_handler, websocket_exception_handler, openai_retry_handler
+    from app.backend.utils import (
+        api_exception_handler,
+        websocket_exception_handler,
+        openai_retry_handler,
+        configure_logging,
+        setup_request_logging,
+        WebSocketLogger
+    )
 except ModuleNotFoundError:
     # 当直接运行时
     from config import config_service
-    from utils import api_exception_handler, websocket_exception_handler, openai_retry_handler
+    from utils import (
+        api_exception_handler,
+        websocket_exception_handler,
+        openai_retry_handler,
+        configure_logging,
+        setup_request_logging,
+        WebSocketLogger
+    )
 
 
 # Local imports
@@ -86,8 +101,11 @@ except ModuleNotFoundError:
             def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> List[str]: return []
 
 
-# --- Logging Configuration ---
-logging.basicConfig(level=logging.DEBUG if config_service.settings.DEBUG else logging.INFO)
+# --- 配置日志系统 ---
+configure_logging(
+    env=config_service.settings.ENVIRONMENT,
+    debug=config_service.settings.DEBUG
+)
 logger = logging.getLogger("voicerag")
 
 # --- Backend Directory ---
@@ -156,6 +174,9 @@ async def lifespan(app: FastAPI):
 
 # --- FastAPI Application Instance ---
 app = FastAPI(lifespan=lifespan)
+
+# --- 设置请求日志记录中间件 ---
+setup_request_logging(app)
 
 # --- Helper Function to Update RAG Provider (Migrated and Adapted) ---
 def update_rag_provider(current_app: FastAPI, rag_provider: Optional[BaseRAGProvider]):
@@ -489,24 +510,29 @@ async def websocket_realtime_endpoint(
     websocket: WebSocket,
     current_user: Optional[UserInDB] = Depends(get_current_user_from_websocket_query_param)
 ):
+    # 创建WebSocket日志记录器
+    ws_logger = WebSocketLogger(
+        websocket=websocket,
+        user_id=current_user.id if current_user else None
+    )
+
     if current_user is None:
-        logger.warning("WebSocket connection attempt without valid authentication.")
+        ws_logger.log_error("WebSocket connection attempt without valid authentication")
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
     await websocket.accept()
-    logger.info(f"WebSocket connection accepted for user: {current_user.username}")
+    ws_logger.log_connection_open({"username": current_user.username})
 
     rtmt_instance = getattr(app.state, "rtmt", None)
     if not rtmt_instance:
-        logger.error("RTMiddleTier instance not found in app.state for WebSocket connection.")
+        ws_logger.log_error("RTMiddleTier instance not found in app.state")
         await websocket.close(code=status.WS_1011_INTERNAL_ERROR, reason="Server configuration error")
         return
 
-    # Pass the authenticated user to _forward_messages if RTMiddleTier needs it
-    # For now, assuming _forward_messages primarily needs the websocket object
-    await rtmt_instance._forward_messages(websocket)
-    logger.info(f"WebSocket connection for user {current_user.username} finished.")
+    # 将日志记录器传递给RTMiddleTier
+    await rtmt_instance._forward_messages(websocket, ws_logger=ws_logger)
+    ws_logger.log_connection_close()
 
 # --- Mount static files directories ---
 # These need to be after API routes and WebSocket routes to ensure they take precedence.

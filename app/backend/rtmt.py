@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from enum import Enum
 # Added defaultdict for easier argument aggregation
 from collections import defaultdict
@@ -74,7 +75,7 @@ class RTMiddleTier:
     # endpoint: str
     # deployment: str
     # key: Optional[str] = None
-    
+
     # Tools are server-side only for now, though the case could be made for client-side tools
     # in addition to server-side tools that are invisible to the client
     tools: dict[str, Tool] = {}
@@ -376,13 +377,18 @@ class RTMiddleTier:
             return None
 
     # --- Updated _forward_messages (Connection Logic - Mostly Unchanged from previous OpenAI switch) ---
-    async def _forward_messages(self, client_ws: WebSocket): # Changed ws to client_ws and its type
+    async def _forward_messages(self, client_ws: WebSocket, ws_logger=None): # Added ws_logger parameter
+        # 如果没有提供ws_logger，创建一个默认的记录器
+        if ws_logger is None:
+            from app.backend.utils.websocket_logging import WebSocketLogger
+            ws_logger = WebSocketLogger(client_ws)
+
         target_url = f"{self.websocket_base_url}?model={self.model}"
         headers = {
             "Authorization": f"Bearer {self.openai_api_key}",
             "OpenAI-Beta": "realtime=v1"
         }
-        logger.info(f"Connecting to OpenAI Realtime API: {target_url}")
+        ws_logger.logger.info(f"Connecting to OpenAI Realtime API: {target_url}")
 
         # Reset state for new connection
         self._pending_tool_calls.clear()
@@ -397,16 +403,16 @@ class RTMiddleTier:
         if all_proxy_url and all_proxy_url.startswith("socks5://") and AIOHTTP_SOCKS_AVAILABLE:
             try:
                 connector = ProxyConnector.from_url(all_proxy_url)
-                logger.info(f"Attempting to use SOCKS5 proxy via all_proxy: {all_proxy_url}")
+                ws_logger.logger.info(f"Attempting to use SOCKS5 proxy via all_proxy: {all_proxy_url}")
             except Exception as e:
-                logger.error(f"Failed to create SOCKS5 connector from '{all_proxy_url}': {e}. Falling back.")
+                ws_logger.log_error(f"Failed to create SOCKS5 connector from '{all_proxy_url}': {e}. Falling back.")
                 connector = None # Ensure connector is None if creation failed
         elif https_proxy_url:
             # Fallback to HTTP proxy if SOCKS5 is not configured or available
             proxy_to_use_in_ws_connect = https_proxy_url
-            logger.info(f"Attempting to use HTTP proxy via https_proxy: {https_proxy_url}")
+            ws_logger.logger.info(f"Attempting to use HTTP proxy via https_proxy: {https_proxy_url}")
         else:
-            logger.info("No SOCKS5 (all_proxy) or HTTP (https_proxy) environment variable found. Connecting directly.")
+            ws_logger.logger.info("No SOCKS5 (all_proxy) or HTTP (https_proxy) environment variable found. Connecting directly.")
 
         # Create ClientSession with connector if SOCKS5 is used, otherwise use default session
         async with aiohttp.ClientSession(connector=connector) as session:
@@ -419,48 +425,95 @@ class RTMiddleTier:
                     # ssl=ssl_context, # Add if SSL verification issues arise
                     proxy=proxy_to_use_in_ws_connect # Pass HTTP proxy URL here if applicable
                 ) as target_ws:
-                    logger.info("Successfully connected to OpenAI Realtime API.")
+                    ws_logger.logger.info("Successfully connected to OpenAI Realtime API.")
 
                     async def from_client_to_server():
                         try:
                             while True:
                                 msg_data = await client_ws.receive_text()
+
+                                # 记录收到的消息
+                                try:
+                                    msg_json = json.loads(msg_data)
+                                    msg_type = msg_json.get("type", "unknown")
+                                    ws_logger.log_message_received(msg_type, msg_json)
+                                except json.JSONDecodeError:
+                                    ws_logger.log_message_received("invalid_json", {"raw": msg_data[:100]})
+
+                                # 处理消息
+                                start_time = time.time()
                                 new_msg_str = await self._process_message_to_server(msg_data, client_ws)
+                                process_time = (time.time() - start_time) * 1000  # 毫秒
+
+                                # 记录性能
+                                ws_logger.log_performance(
+                                    "process_client_message",
+                                    process_time,
+                                    {"message_type": msg_type if 'msg_type' in locals() else "unknown"}
+                                )
+
                                 if new_msg_str is not None:
                                     await target_ws.send_str(new_msg_str)
                         except WebSocketDisconnect: # Renamed from aiohttp specific
-                            logger.info("Client WebSocket connection closed (WebSocketDisconnect).")
+                            ws_logger.logger.info("Client WebSocket connection closed (WebSocketDisconnect).")
                         except Exception as e:
-                            logger.error(f'Client WebSocket connection closed with exception: {e!r}')
+                            ws_logger.log_error(f'Client WebSocket connection closed with exception', e)
                         finally:
                             if not target_ws.closed:
-                                logger.info("Client disconnected, closing connection to OpenAI.")
+                                ws_logger.logger.info("Client disconnected, closing connection to OpenAI.")
                                 await target_ws.close()
 
                     async def from_server_to_client():
                         try:
                             async for msg in target_ws: # OpenAI connection still uses aiohttp
                                 if msg.type == aiohttp.WSMsgType.TEXT:
+                                    # 记录收到的消息
+                                    try:
+                                        msg_json = json.loads(msg.data)
+                                        msg_type = msg_json.get("type", "unknown")
+                                        ws_logger.log_message_received(f"openai_{msg_type}", None)
+                                    except json.JSONDecodeError:
+                                        ws_logger.log_message_received("openai_invalid_json", {"raw": msg.data[:100]})
+
+                                    # 处理消息
+                                    start_time = time.time()
                                     new_msg_str = await self._process_message_to_client(msg.data, client_ws, target_ws)
+                                    process_time = (time.time() - start_time) * 1000  # 毫秒
+
+                                    # 记录性能
+                                    ws_logger.log_performance(
+                                        "process_server_message",
+                                        process_time,
+                                        {"message_type": msg_type if 'msg_type' in locals() else "unknown"}
+                                    )
+
                                     if new_msg_str is not None:
-                                        await client_ws.send_text(new_msg_str) # FastAPI send_text
+                                        await client_ws.send_text(new_msg_str)
+
+                                        # 记录发送的消息
+                                        try:
+                                            sent_json = json.loads(new_msg_str)
+                                            sent_type = sent_json.get("type", "unknown")
+                                            ws_logger.log_message_sent(sent_type, None)
+                                        except json.JSONDecodeError:
+                                            ws_logger.log_message_sent("invalid_json", {"raw": new_msg_str[:100]})
                                 elif msg.type == aiohttp.WSMsgType.ERROR:
-                                    logger.error(f'OpenAI WebSocket connection closed with exception {target_ws.exception()!r}')
+                                    ws_logger.log_error(f'OpenAI WebSocket connection closed with exception {target_ws.exception()!r}')
                                     break
                                 elif msg.type == aiohttp.WSMsgType.CLOSED:
-                                    logger.info("OpenAI WebSocket connection closed.")
+                                    ws_logger.logger.info("OpenAI WebSocket connection closed.")
                                     break
                                 else:
-                                    logger.warning(f"Received unexpected message type from OpenAI: {msg.type}")
+                                    ws_logger.logger.warning(f"Received unexpected message type from OpenAI: {msg.type}")
                         except Exception as e:
-                            logger.error(f"Exception in from_server_to_client: {e!r}")
+                            ws_logger.log_error(f"Exception in from_server_to_client", e)
                         finally:
                             try: # Ensure client_ws.close is attempted
                                 if client_ws.client_state != WebSocketState.DISCONNECTED: # Check state before closing
-                                     logger.info("OpenAI disconnected or error, closing connection to client.")
+                                     ws_logger.logger.info("OpenAI disconnected or error, closing connection to client.")
                                      await client_ws.close(code=fastapi_status.WS_1011_INTERNAL_ERROR) # Use FastAPI status
                             except Exception as e_close:
-                                logger.error(f"Error closing client WebSocket: {e_close!r}")
+                                ws_logger.log_error(f"Error closing client WebSocket", e_close)
 
 
                     # Import WebSocketDisconnect and WebSocketState for the above block
@@ -469,26 +522,29 @@ class RTMiddleTier:
                     await asyncio.gather(from_client_to_server(), from_server_to_client())
 
             except aiohttp.ClientConnectorError as e:
-                logger.error(f"Failed to connect to OpenAI WebSocket: {e}")
+                ws_logger.log_error(f"Failed to connect to OpenAI WebSocket", e)
                 # Ensure WebSocketState is imported if not already: from fastapi.websockets import WebSocketState
                 if 'WebSocketState' not in locals() and 'WebSocketState' not in globals(): from fastapi.websockets import WebSocketState # Ensure import
                 if client_ws.client_state != WebSocketState.DISCONNECTED:
                     await client_ws.close(code=fastapi_status.WS_1011_INTERNAL_ERROR, reason='Could not connect to backend API') # FastAPI close
+                    ws_logger.log_connection_close(code=fastapi_status.WS_1011_INTERNAL_ERROR, reason='Could not connect to backend API')
             except aiohttp.WSServerHandshakeError as e:
-                 logger.error(f"WebSocket handshake failed with OpenAI: {e.status} {e.message}")
+                 ws_logger.log_error(f"WebSocket handshake failed with OpenAI: {e.status} {e.message}")
                  if 'WebSocketState' not in locals() and 'WebSocketState' not in globals(): from fastapi.websockets import WebSocketState # Ensure import
                  if client_ws.client_state != WebSocketState.DISCONNECTED:
                      await client_ws.close(code=fastapi_status.WS_1008_POLICY_VIOLATION, reason='Backend authentication or protocol error') # FastAPI close
+                     ws_logger.log_connection_close(code=fastapi_status.WS_1008_POLICY_VIOLATION, reason='Backend authentication or protocol error')
             except Exception as e: # General exception
-                logger.exception(f"Unhandled exception in WebSocket forwarding: {e}")
+                ws_logger.log_error(f"Unhandled exception in WebSocket forwarding", e)
                 if 'WebSocketState' not in locals() and 'WebSocketState' not in globals(): from fastapi.websockets import WebSocketState # Ensure import
                 if client_ws.client_state != WebSocketState.DISCONNECTED:
                     try:
                         await client_ws.close(code=fastapi_status.WS_1011_INTERNAL_ERROR, reason='Internal server error') # FastAPI close
+                        ws_logger.log_connection_close(code=fastapi_status.WS_1011_INTERNAL_ERROR, reason='Internal server error')
                     except Exception as e_close:
-                        logger.error(f"Error closing client WebSocket during general exception: {e_close!r}")
+                        ws_logger.log_error(f"Error closing client WebSocket during general exception", e_close)
 
-        logger.info("WebSocket forwarding finished for client.")
+        ws_logger.logger.info("WebSocket forwarding finished for client.")
 
 
 
