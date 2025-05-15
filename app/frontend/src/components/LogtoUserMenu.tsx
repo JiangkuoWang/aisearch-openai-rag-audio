@@ -45,7 +45,7 @@ export function LogtoUserMenu() {
         onClick={handleLogin}
         className="flex items-center px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-md transition"
       >
-        Logto 登录
+        Sign in/Sign up
       </button>
     );
   }
@@ -76,7 +76,10 @@ export function LogtoUserMenu() {
 
           <button
             onClick={() => {
-              signOut();
+              // Construct the post-logout redirect URI to be the root of the current application.
+              // This ensures that after logging out from Logto, the user is redirected back to your app's home page.
+              const postLogoutRedirectUri = window.location.origin + '/'; // e.g., 'http://localhost:8765/'
+              signOut(postLogoutRedirectUri);
               setIsMenuOpen(false);
             }}
             className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100"

@@ -32,7 +32,7 @@ if (Test-Path -Path "/usr") {
 }
 $backendHost = "localhost"
 $backendPort = "8765"
-Write-Host "Starting FastAPI backend on $backendHost:$backendPort using Uvicorn..."
+Write-Host "Starting FastAPI backend on ${backendHost}:${backendPort} using Uvicorn..."
 Start-Process -FilePath $venvPythonPath -ArgumentList "-m uvicorn app.backend.main:app --host $backendHost --port $backendPort --reload" -Wait -NoNewWindow
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Failed to start backend"
