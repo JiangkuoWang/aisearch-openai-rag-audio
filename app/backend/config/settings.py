@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     # 基础配置
     APP_NAME: str = "RAG Audio Search"
     API_PREFIX: str = ""
-    BACKEND_HOST: str = "127.0.0.1"
+    BACKEND_HOST: str = "localhost"
     BACKEND_PORT: int = 8765
     DEBUG: bool = False
 
@@ -24,7 +24,7 @@ class Settings(BaseSettings):
 
     # CORS配置
     FRONTEND_URL: Optional[str] = None
-    CORS_ORIGINS: List[str] = ["http://localhost:8765", "http://127.0.0.1:8765", "http://localhost:5173"]
+    CORS_ORIGINS: List[str] = ["http://localhost:8765", "http://localhost:5173"]
 
     # OpenAI配置
     OPENAI_API_KEY: Optional[SecretStr] = Field(None, env="OPENAI_API_KEY")

@@ -1,5 +1,6 @@
+import { useState, useEffect } from "react";
 import useWebSocket from "react-use-websocket";
-import { getToken } from "@/lib/auth";
+import { useLogto } from "@logto/react";
 
 import {
     InputAudioBufferAppendCommand,
@@ -52,19 +53,44 @@ export default function useRealTime({
     onReceivedInputAudioTranscriptionCompleted,
     onReceivedError
 }: Parameters) {
-    let socketUrl: string | null = null;
-    if (useDirectAoaiApi) {
-        socketUrl = `${aoaiEndpointOverride}/openai/realtime?api-key=${aoaiApiKeyOverride}&deployment=${aoaiModelOverride}&api-version=2024-10-01-preview`;
-    } else {
-        const token = getToken();
-        console.log("Attempting to connect WebSocket. Token:", token); // 调试日志
-        if (token) {
-            socketUrl = `ws://127.0.0.1:8765/realtime?token=${token}`;
-        } else {
-            console.log("No auth token found. WebSocket connection will not be attempted.");
-            // socketUrl remains null
-        }
-    }
+    const [socketUrl, setSocketUrl] = useState<string | (() => Promise<string>) | null>(null);
+    const { getAccessToken, isAuthenticated } = useLogto();
+
+    useEffect(() => {
+        const setupSocketUrl = async () => {
+            if (useDirectAoaiApi) {
+                setSocketUrl(`${aoaiEndpointOverride}/openai/realtime?api-key=${aoaiApiKeyOverride}&deployment=${aoaiModelOverride}&api-version=2024-10-01-preview`);
+            } else {
+                if (isAuthenticated) {
+                    try {
+                        const token = await getAccessToken();
+                        console.log("Attempting to connect WebSocket. Logto Token:", token ? "Token Acquired" : "No Token");
+                        if (token) {
+                            setSocketUrl(`ws://localhost:8765/realtime?token=${token}`);
+                        } else {
+                            console.log("No auth token from Logto. WebSocket connection will not be attempted.");
+                            setSocketUrl(null);
+                        }
+                    } catch (error) {
+                        console.error("Error getting Logto access token for WebSocket:", error);
+                        setSocketUrl(null);
+                    }
+                } else {
+                    console.log("User not authenticated via Logto. WebSocket connection will not be attempted.");
+                    setSocketUrl(null);
+                }
+            }
+        };
+
+        setupSocketUrl();
+    }, [
+        isAuthenticated, 
+        getAccessToken, 
+        useDirectAoaiApi, 
+        aoaiEndpointOverride, 
+        aoaiApiKeyOverride, 
+        aoaiModelOverride
+    ]);
 
     const { sendJsonMessage } = useWebSocket(socketUrl, {
         onOpen: () => {

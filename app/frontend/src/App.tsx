@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Mic, MicOff } from "lucide-react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -14,15 +14,14 @@ import useAudioPlayer from "@/hooks/useAudioPlayer";
 import { GroundingFile, ToolResult, RagProviderType } from "./types";
 import RagSelector from "./RagSelector";
 
-// 导入认证相关组件
-import { AuthProvider, useAuth } from "./contexts/AuthContext";
-import { AuthModal } from "./components/AuthModal";
-import { UserMenu } from "./components/UserMenu";
-import { getAuthStatus } from "./lib/api";
+
+import { LogtoUserMenu } from "./components/LogtoUserMenu";
+// import { getAuthStatus } from "./lib/api"; // Removed
+import { useLogto } from "@logto/react"; // Added
 
 import logo from "./assets/logo.svg";
 
-// 封装应用内容，以便可以使用认证上下文
+// 封装应用内容，以便可以使用认证上下文http://localhost:8765/callback?code=kriVDFau_yRBz0pmxZtreVIt67VTcd9LOWPJpR5n8xJ&state=mF-hc05QZ7nYW0nRjLalSYbc10bizxqt1tp1sMQhCAfGNQcKlZ28FYo2RcbWGrXpeSB2acOJBfP_xxJhMXiejg&iss=https%3A%2F%2Fousbav.logto.app%2Foidc
 function AppContent() {
     const [isRecording, setIsRecording] = useState(false);
     const [groundingFiles, setGroundingFiles] = useState<GroundingFile[]>([]);
@@ -34,24 +33,13 @@ function AppContent() {
     const [uploading, setUploading] = useState(false);
     const [dbConnected, setDbConnected] = useState(false);
     const [sidebarOpen, setSidebarOpen] = useState(true);
-    
+
     // 认证状态
-    const [authModalOpen, setAuthModalOpen] = useState(false);
-    const { isAuthenticated } = useAuth();
-    
-    // 检查认证状态
-    useEffect(() => {
-        const checkAuthStatus = async () => {
-            try {
-                const status = await getAuthStatus();
-                console.log("Auth status:", status);
-            } catch (error) {
-                console.error("Failed to check auth status:", error);
-            }
-        };
-        
-        checkAuthStatus();
-    }, []);
+    // const [authModalOpen, setAuthModalOpen] = useState(false); // Removed
+    const { isAuthenticated, getAccessToken } = useLogto(); // Updated to useLogto, removed isLogtoLoading
+
+    // 注意：我们在LogtoUserMenu组件中使用Logto的功能，
+    // 这里不需要直接使用Logto的状态
 
     const { startSession, addUserAudio, inputAudioBufferClear } = useRealTime({
         onWebSocketOpen: () => console.log("WebSocket connection opened"),
@@ -78,9 +66,11 @@ function AppContent() {
     const { start: startAudioRecording, stop: stopAudioRecording } = useAudioRecorder({ onAudioRecorded: addUserAudio });
 
     const onToggleListening = async () => {
-        // 如果未登录，则打开登录模态框
+        // 如果未登录，则提示用户登录
         if (!isAuthenticated) {
-            setAuthModalOpen(true);
+            // Consider alerting the user or disabling the button if not authenticated
+            console.warn("User not authenticated. Please log in to start recording.");
+            // setAuthModalOpen(true); // Removed
             return;
         }
 
@@ -101,40 +91,60 @@ function AppContent() {
 
     // Upload RAG config and files
     const doUpload = async (): Promise<boolean> => {
-        // 如果未登录，则打开登录模态框
+        // 如果未登录，则提示用户登录
         if (!isAuthenticated) {
-            setAuthModalOpen(true);
+            // Consider alerting the user or disabling the button if not authenticated
+            console.warn("User not authenticated. Please log in to upload files.");
+            // setAuthModalOpen(true); // Removed
             return false;
         }
-        
+
         try {
             setUploading(true);
+            let headers: HeadersInit = { "Content-Type": "application/json" };
+            try {
+                const token = await getAccessToken("https://your-api-resource-indicator"); // Replace with your actual API resource indicator if needed
+                if (token) {
+                    headers['Authorization'] = `Bearer ${token}`;
+                }
+            } catch (err) {
+                console.error("Failed to get access token for RAG config:", err);
+                // Decide if you want to proceed without a token or fail
+            }
+
             // Set provider type
             const configResponse = await fetch("/rag-config", {
                 method: "POST",
-                headers: { 
-                    "Content-Type": "application/json",
-                    // 如果有认证令牌，添加到请求头
-                    ...(getAuthHeaders() || {})
-                },
+                headers: headers,
                 body: JSON.stringify({ provider_type: ragType })
             });
-            
+
             if (!configResponse.ok) {
                 console.error("Failed to set RAG config:", await configResponse.text());
                 return false;
             }
-            
+
             // Upload files if needed
             if (ragType !== "none" && files) {
                 const fd = new FormData();
                 Array.from(files).forEach(f => fd.append("files", f));
-                const uploadResponse = await fetch("/upload", { 
-                    method: "POST", 
-                    body: fd,
-                    headers: getAuthHeaders() || undefined
-                });
                 
+                let uploadHeaders: HeadersInit = {};
+                 try {
+                    const token = await getAccessToken("https://your-api-resource-indicator"); // Replace if needed
+                    if (token) {
+                        uploadHeaders['Authorization'] = `Bearer ${token}`;
+                    }
+                } catch (err) {
+                    console.error("Failed to get access token for file upload:", err);
+                }
+
+                const uploadResponse = await fetch("/upload", {
+                    method: "POST",
+                    body: fd,
+                    headers: uploadHeaders
+                });
+
                 if (!uploadResponse.ok) {
                     console.error("Upload failed:", await uploadResponse.text());
                     return false;
@@ -148,12 +158,12 @@ function AppContent() {
             setUploading(false);
         }
     };
-    
-    // 获取认证请求头
-    const getAuthHeaders = () => {
-        const token = localStorage.getItem('voice_rag_auth_token');
-        return token ? { 'Authorization': `Bearer ${token}` } : null;
-    };
+
+    // 获取认证请求头 - Removed
+    // const getAuthHeaders = () => {
+    //     const token = localStorage.getItem('voice_rag_auth_token');
+    //     return token ? { 'Authorization': `Bearer ${token}` } : null;
+    // };
 
     const { t } = useTranslation();
 
@@ -163,8 +173,12 @@ function AppContent() {
                 <div>
                     <img src={logo} alt="Azure logo" className="h-16 w-16" />
                 </div>
-                <div className="mr-4">
-                    <UserMenu onLoginClick={() => setAuthModalOpen(true)} />
+                <div className="flex items-center space-x-4 mr-4">
+                    {/* 原有的认证菜单 - Removed */}
+                    {/* <UserMenu onLoginClick={() => setAuthModalOpen(true)} /> */}
+
+                    {/* Logto认证菜单 */}
+                    <LogtoUserMenu />
                 </div>
             </div>
             <main className={`flex flex-grow flex-col items-center justify-center transition-all duration-300 ${dbConnected && sidebarOpen ? 'pr-96' : ''}`}>
@@ -190,9 +204,11 @@ function AppContent() {
                     </Button>
                     <Button
                         onClick={() => {
-                            // 如果未登录，则打开登录模态框
+                            // 如果未登录，则提示用户登录
                             if (!isAuthenticated) {
-                                setAuthModalOpen(true);
+                                // Consider alerting the user or disabling the button
+                                console.warn("User not authenticated. Please log in to connect to the database.");
+                                // setAuthModalOpen(true); // Removed
                             } else {
                                 setDbConnected(!dbConnected);
                                 setSidebarOpen(true);
@@ -207,18 +223,18 @@ function AppContent() {
                     <>
                         {/* 收起时显示的展开按钮 */}
                         {!sidebarOpen && (
-                            <button 
+                            <button
                                 onClick={() => setSidebarOpen(true)}
                                 className="fixed top-1/2 right-0 z-40 p-2 bg-white rounded-l-md shadow-md flex items-center justify-center transform -translate-y-1/2"
                             >
                                 <ChevronLeft className="h-5 w-5" />
                             </button>
                         )}
-                        
+
                         {/* 侧栏面板 */}
                         <aside className={`fixed top-0 right-0 h-screen w-96 bg-white/90 backdrop-blur-sm rounded-l-2xl shadow-lg p-6 overflow-y-auto z-40 transform transition-all duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-                            <button 
-                                onClick={() => setSidebarOpen(false)} 
+                            <button
+                                onClick={() => setSidebarOpen(false)}
                                 className="absolute top-4 left-4 p-2 bg-white hover:bg-gray-100 rounded-full shadow-md transition-colors"
                                 aria-label="关闭侧栏"
                             >
@@ -254,19 +270,21 @@ function AppContent() {
             </footer>
 
             <GroundingFileView groundingFile={selectedFile} onClosed={() => setSelectedFile(null)} />
-            
+
             {/* 认证模态框 */}
-            <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} />
+            {/* <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} /> */}
         </div>
     );
 }
 
-// 主应用组件，使用AuthProvider包装内容
+// 主应用组件
+// 注意：我们不再需要AuthProvider，因为现在使用LogtoProvider
+// 但为了保持兼容性，我们暂时保留了原有的认证系统
 function App() {
     return (
-        <AuthProvider>
-            <AppContent />
-        </AuthProvider>
+        // <AuthProvider> // Removed AuthProvider wrapper
+        <AppContent />
+        // </AuthProvider> // Removed AuthProvider wrapper
     );
 }
 

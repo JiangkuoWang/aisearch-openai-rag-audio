@@ -189,23 +189,20 @@ async def serve_index():
 # Serve favicon.ico
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
-    # STATIC_DIR existence is crucial for serving any static file.
     if not STATIC_DIR.is_dir():
         logger.error(f"Static files directory not found: {STATIC_DIR}. Cannot serve favicon.ico.")
         raise HTTPException(status_code=500, detail="Server configuration error: Static directory not found.")
     favicon_path = STATIC_DIR / "favicon.ico"
     if not favicon_path.is_file():
-        logger.warning(f"favicon.ico not found at {favicon_path}") # Warning as it's less critical than index.html
+        logger.warning(f"favicon.ico not found at {favicon_path}")
         raise HTTPException(status_code=404, detail="favicon.ico not found")
     return FileResponse(favicon_path)
 
-# General health check logs for static file serving (similar to original)
+# General health check logs for static file serving
 if not STATIC_DIR.is_dir():
     logger.warning(f"Primary static files directory ({STATIC_DIR}) not found. Core static assets (index.html, favicon.ico) might fail to load.")
 elif not (STATIC_DIR / "index.html").is_file():
     logger.warning(f"index.html not found in {STATIC_DIR}. Root path '/' will not serve the frontend despite the route existing.")
-
-# Note: app.mount for /assets will be placed after all API routes and WebSocket endpoints.
 
 # --- Pydantic Models for Migrated Endpoints ---
 class RAGConfigRequest(BaseModel):
@@ -442,6 +439,31 @@ async def handle_auth_status_fastapi(
             "authenticated": False,
             "auth_url": f"{auth_url_base}/auth" # Points to the FastAPI auth router
         })
+
+# --- Mount static assets directory (e.g., for CSS, JS chunks) ---
+# This must be AFTER API routes and BEFORE the SPA catch-all route.
+assets_dir = STATIC_DIR / "assets"
+if assets_dir.is_dir():
+    app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+    logger.info(f"Static assets mounted from {assets_dir}")
+else:
+    logger.warning(f"Static assets directory {assets_dir} not found. Mounting for /assets will be skipped.")
+
+
+# CATCH-ALL ROUTE for Single Page Application (SPA)
+# This should be one of the LAST GET routes defined to allow API routes and specific static file mounts to be matched first.
+# It serves the main index.html for any GET request not handled by other routes,
+# allowing client-side routing to take over (e.g., for /callback, /user/profile, etc.).
+@app.get("/{full_path:path}", response_class=FileResponse, include_in_schema=False)
+async def serve_spa(request: Request, full_path: str):
+    index_path = STATIC_DIR / "index.html"
+    # Basic check, assuming STATIC_DIR and index_path validity already logged above or handled by serve_index
+    if not index_path.is_file(): # Simplified check here, more robust checks in serve_index
+        logger.error(f"SPA index.html not found at {index_path} when trying to serve path: /{full_path}")
+        # Fallback to a generic 404 if index.html is missing, as serve_index would have already logged specific errors.
+        raise HTTPException(status_code=404, detail="Application entry point not found.")
+    # logger.info(f"SPA catch-all serving index.html for path: /{full_path}")
+    return FileResponse(index_path)
 
 # --- WebSocket Realtime Endpoint ---
 @app.websocket("/realtime")

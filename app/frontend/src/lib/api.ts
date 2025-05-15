@@ -2,7 +2,7 @@
  * HTTP客户端封装
  * 自动向请求中添加认证令牌
  */
-import { getToken } from './auth';
+// import { getToken } from './auth';
 
 // 主应用API地址
 const API_BASE_URL = 'http://localhost:8765';
@@ -15,15 +15,15 @@ export async function fetchWithAuth(
   options: RequestInit = {}
 ): Promise<Response> {
   // 获取认证令牌
-  const token = getToken();
+  // const token = getToken();
   
   // 准备请求头
   const headers = new Headers(options.headers || {});
   
   // 如果有令牌，添加到认证头
-  if (token) {
-    headers.set('Authorization', `Bearer ${token}`);
-  }
+  // if (token) {
+  //   headers.set('Authorization', `Bearer ${token}`);
+  // }
   
   // 确保请求包含完整的URL
   const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
@@ -108,6 +108,6 @@ export async function setRagProviderType(providerType: string): Promise<any> {
 /**
  * 获取当前用户认证状态
  */
-export async function getAuthStatus(): Promise<any> {
-  return get('/auth-status');
-} 
+// export async function getAuthStatus(): Promise<any> {
+//   return get('/auth-status');
+// } 
