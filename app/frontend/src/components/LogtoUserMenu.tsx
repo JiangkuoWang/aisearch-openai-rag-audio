@@ -43,7 +43,7 @@ export function LogtoUserMenu() {
     return (
       <button
         onClick={handleLogin}
-        className="flex items-center px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-md transition"
+        className="flex items-center px-4 py-2 text-sm text-primary-foreground bg-primary hover:bg-primary/90 rounded-md transition-colors"
       >
         Sign in/Sign up
       </button>
@@ -54,7 +54,7 @@ export function LogtoUserMenu() {
     <div className="relative" ref={menuRef}>
       <button
         onClick={() => setIsMenuOpen(!isMenuOpen)}
-        className="flex items-center px-3 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition"
+        className="flex items-center px-3 py-2 text-sm text-foreground bg-secondary hover:bg-secondary/80 rounded-md transition-colors"
       >
         <span className="mr-2">{user?.name || user?.sub}</span>
         <svg
@@ -68,10 +68,10 @@ export function LogtoUserMenu() {
       </button>
 
       {isMenuOpen && (
-        <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-10">
-          <div className="px-4 py-2 border-b">
-            <p className="text-sm font-medium">{user?.name || user?.sub}</p>
-            <p className="text-xs text-gray-500 truncate">{user?.email}</p>
+        <div className="absolute right-0 mt-2 w-48 bg-popover border border-border rounded-md shadow-lg py-1 z-10">
+          <div className="px-4 py-2 border-b border-border">
+            <p className="text-sm font-medium text-popover-foreground">{user?.name || user?.sub}</p>
+            <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
           </div>
 
           <button
@@ -82,7 +82,7 @@ export function LogtoUserMenu() {
               signOut(postLogoutRedirectUri);
               setIsMenuOpen(false);
             }}
-            className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100"
+            className="block w-full text-left px-4 py-2 text-sm text-destructive hover:bg-accent hover:text-accent-foreground transition-colors"
           >
             退出登录
           </button>

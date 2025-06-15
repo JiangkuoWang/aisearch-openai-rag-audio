@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { GroundingFiles } from "@/components/ui/grounding-files";
 import GroundingFileView from "@/components/ui/grounding-file-view";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 import useRealTime from "@/hooks/useRealtime";
 import useAudioRecorder from "@/hooks/useAudioRecorder";
@@ -14,10 +15,10 @@ import useAudioPlayer from "@/hooks/useAudioPlayer";
 import { GroundingFile, ToolResult, RagProviderType } from "./types";
 import RagSelector from "./RagSelector";
 
-
 import { LogtoUserMenu } from "./components/LogtoUserMenu";
 // import { getAuthStatus } from "./lib/api"; // Removed
 import { useLogto } from "@logto/react"; // Added
+import { ThemeProvider } from "@/contexts/ThemeContext";
 
 import logo from "./assets/logo.svg";
 
@@ -168,27 +169,31 @@ function AppContent() {
     const { t } = useTranslation();
 
     return (
-        <div className="flex min-h-screen flex-col bg-gray-100 text-gray-900">
-            <div className="flex justify-between items-center p-4">
+        <div className="flex min-h-screen flex-col bg-background text-foreground">
+            <div className="flex justify-between items-center p-4 border-b border-border">
                 <div>
                     <img src={logo} alt="Azure logo" className="h-16 w-16" />
                 </div>
-                <div className="flex items-center space-x-4 mr-4">
-                    {/* 原有的认证菜单 - Removed */}
-                    {/* <UserMenu onLoginClick={() => setAuthModalOpen(true)} /> */}
+                <div className="flex items-center space-x-3 mr-4">
+                    {/* 主题切换按钮 */}
+                    <ThemeToggle />
 
                     {/* Logto认证菜单 */}
                     <LogtoUserMenu />
                 </div>
             </div>
             <main className={`flex flex-grow flex-col items-center justify-center transition-all duration-300 ${dbConnected && sidebarOpen ? 'pr-96' : ''}`}>
-                <h1 className="mb-8 bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-4xl font-bold text-transparent md:text-7xl">
+                <h1 className="mb-8 bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-4xl font-bold text-transparent md:text-7xl dark:from-purple-400 dark:to-pink-400">
                     {t("app.title")}
                 </h1>
                 <div className="mb-4 flex flex-col items-center justify-center space-y-4">
                     <Button
                         onClick={onToggleListening}
-                        className={`h-12 w-60 ${isRecording ? "bg-red-600 hover:bg-red-700" : "bg-purple-500 hover:bg-purple-600"}`}
+                        className={`h-12 w-60 transition-all duration-200 ${
+                            isRecording
+                                ? "bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                                : "bg-purple-500 hover:bg-purple-600 text-white dark:bg-purple-600 dark:hover:bg-purple-700"
+                        }`}
                         aria-label={isRecording ? t("app.stopRecording") : t("app.startRecording")}
                     >
                         {isRecording ? (
@@ -214,7 +219,11 @@ function AppContent() {
                                 setSidebarOpen(true);
                             }
                         }}
-                        className={`h-12 w-60 ${dbConnected ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'} text-white rounded-lg transition`}
+                        className={`h-12 w-60 text-white rounded-lg transition-all duration-200 ${
+                            dbConnected
+                                ? 'bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700'
+                                : 'bg-green-500 hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-700'
+                        }`}
                     >
                         {dbConnected ? 'Disconnect Database' : 'Connect to database'}
                     </Button>
@@ -225,20 +234,20 @@ function AppContent() {
                         {!sidebarOpen && (
                             <button
                                 onClick={() => setSidebarOpen(true)}
-                                className="fixed top-1/2 right-0 z-40 p-2 bg-white rounded-l-md shadow-md flex items-center justify-center transform -translate-y-1/2"
+                                className="fixed top-1/2 right-0 z-40 p-2 bg-background border border-border rounded-l-md shadow-md flex items-center justify-center transform -translate-y-1/2 hover:bg-accent transition-colors"
                             >
-                                <ChevronLeft className="h-5 w-5" />
+                                <ChevronLeft className="h-5 w-5 text-foreground" />
                             </button>
                         )}
 
                         {/* 侧栏面板 */}
-                        <aside className={`fixed top-0 right-0 h-screen w-96 bg-white/90 backdrop-blur-sm rounded-l-2xl shadow-lg p-6 overflow-y-auto z-40 transform transition-all duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+                        <aside className={`fixed top-0 right-0 h-screen w-96 bg-background/95 backdrop-blur-sm border-l border-border rounded-l-2xl shadow-lg p-6 overflow-y-auto z-40 transform transition-all duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : 'translate-x-full'}`}>
                             <button
                                 onClick={() => setSidebarOpen(false)}
-                                className="absolute top-4 left-4 p-2 bg-white hover:bg-gray-100 rounded-full shadow-md transition-colors"
+                                className="absolute top-4 left-4 p-2 bg-background hover:bg-accent border border-border rounded-full shadow-md transition-colors"
                                 aria-label="关闭侧栏"
                             >
-                                <ChevronRight className="h-5 w-5" />
+                                <ChevronRight className="h-5 w-5 text-foreground" />
                             </button>
                         <h2 className="text-2xl font-semibold mb-4">Select RAG Mode & Upload</h2>
                         <RagSelector
@@ -250,9 +259,9 @@ function AppContent() {
                             doUpload={doUpload}
                         />
                         {files && files.length > 0 && (
-                            <div className="mt-6 bg-white rounded-lg shadow p-4">
-                                <h3 className="font-semibold mb-2">Selected Files</h3>
-                                <ul className="space-y-1 text-sm text-gray-700">
+                            <div className="mt-6 bg-card rounded-lg shadow border border-border p-4">
+                                <h3 className="font-semibold mb-2 text-card-foreground">Selected Files</h3>
+                                <ul className="space-y-1 text-sm text-muted-foreground">
                                     {Array.from(files).map(f => (
                                         <li key={f.name} className="truncate">{f.name}</li>
                                     ))}
@@ -265,8 +274,8 @@ function AppContent() {
                 <GroundingFiles files={groundingFiles} onSelected={setSelectedFile} />
             </main>
 
-            <footer className="py-4 text-center">
-                <p>{t("app.footer")}</p>
+            <footer className="py-4 text-center border-t border-border">
+                <p className="text-muted-foreground">{t("app.footer")}</p>
             </footer>
 
             <GroundingFileView groundingFile={selectedFile} onClosed={() => setSelectedFile(null)} />
@@ -282,9 +291,9 @@ function AppContent() {
 // 但为了保持兼容性，我们暂时保留了原有的认证系统
 function App() {
     return (
-        // <AuthProvider> // Removed AuthProvider wrapper
-        <AppContent />
-        // </AuthProvider> // Removed AuthProvider wrapper
+        <ThemeProvider defaultTheme="system" storageKey="voice-rag-theme">
+            <AppContent />
+        </ThemeProvider>
     );
 }
 
