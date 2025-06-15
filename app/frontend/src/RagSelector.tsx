@@ -13,8 +13,8 @@ interface RagSelectorProps {
 }
 
 const ragTypes: { value: RagProviderType; label: string; color: string; tooltip: string }[] = [
-    { value: "in_memory", label: "RAG", color: "bg-purple-300", tooltip: "普通模式：内存存储，适合小规模使用" },
-    { value: "llama_index", label: "GraphRAG", color: "bg-blue-300", tooltip: "高级模式：基于 LlamaIndex，支持索引持久化" },
+    { value: "in_memory", label: "RAG", color: "bg-purple-100 dark:bg-purple-900/30 border-purple-300 dark:border-purple-700", tooltip: "普通模式：内存存储，适合小规模使用" },
+    { value: "llama_index", label: "GraphRAG", color: "bg-blue-100 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700", tooltip: "高级模式：基于 LlamaIndex，支持索引持久化" },
 ];
 
 export default function RagSelector({ ragType, setRagType, files, setFiles, uploading, doUpload }: RagSelectorProps) {
@@ -266,7 +266,7 @@ export default function RagSelector({ ragType, setRagType, files, setFiles, uplo
     };
 
     return (
-        <div className="mb-8 w-full max-w-md mx-auto p-6 rounded-2xl shadow-lg bg-white/80 animate-fade-in">
+        <div className="mb-8 w-full max-w-md mx-auto p-6 rounded-2xl shadow-lg bg-card/80 backdrop-blur-sm border border-border animate-fade-in">
             <fieldset className="mb-4 flex flex-col items-center">
                 <div className="flex gap-4 justify-center mb-6">
                     {ragTypes.map(rt => (
@@ -274,13 +274,13 @@ export default function RagSelector({ ragType, setRagType, files, setFiles, uplo
                             key={rt.value}
                             title={rt.tooltip}
                             onClick={() => setRagType(ragType === rt.value ? "none" : rt.value)}
-                            className={`flex items-center space-x-2 px-4 py-2 rounded-lg cursor-pointer transition-all duration-200 shadow-md border ${ragType === rt.value 
-                                ? rt.color + " scale-110 border-purple-500" 
-                                : "bg-white hover:bg-gray-50 border-gray-200"}`}
+                            className={`flex items-center space-x-2 px-4 py-2 rounded-lg cursor-pointer transition-all duration-200 shadow-md border ${ragType === rt.value
+                                ? rt.color + " scale-110"
+                                : "bg-background hover:bg-accent border-border"}`}
                         >
-                            <span className="font-medium text-base select-none flex items-center">
+                            <span className="font-medium text-base select-none flex items-center text-foreground">
                                 {rt.label}
-                                <span className={`ml-2 text-xs px-2 py-0.5 rounded ${rt.value === 'in_memory' ? 'bg-gray-200 text-gray-800' : 'bg-yellow-200 text-yellow-800'}`}>
+                                <span className={`ml-2 text-xs px-2 py-0.5 rounded ${rt.value === 'in_memory' ? 'bg-secondary text-secondary-foreground' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'}`}>
                                     {rt.value === 'in_memory' ? '普通' : '高级'}
                                 </span>
                             </span>
@@ -295,9 +295,9 @@ export default function RagSelector({ ragType, setRagType, files, setFiles, uplo
                         {files && files.length > 0 ? (
                             <div className="w-full">
                                 <div className="flex justify-between items-center mb-3">
-                                    <h3 className="font-semibold text-gray-700">已选择的文件</h3>
+                                    <h3 className="font-semibold text-foreground">已选择的文件</h3>
                                     {uploading && (
-                                        <div className="flex items-center text-sm text-blue-600">
+                                        <div className="flex items-center text-sm text-primary">
                                             <Loader className="animate-spin h-4 w-4 mr-1" />
                                             <span>正在处理...</span>
                                         </div>
@@ -316,8 +316,8 @@ export default function RagSelector({ ragType, setRagType, files, setFiles, uplo
                                 </div>
                                 
                                 {/* 添加新文件的按钮 */}
-                                <div 
-                                    className="mt-4 border-2 border-dashed border-gray-300 rounded-lg p-3 text-center cursor-pointer hover:bg-gray-50 transition-colors"
+                                <div
+                                    className="mt-4 border-2 border-dashed border-border rounded-lg p-3 text-center cursor-pointer hover:bg-accent transition-colors"
                                     onClick={() => {
                                         console.log('"Add more files" button clicked.');
                                         const additionalFileInput = document.getElementById('additionalFileInput') as HTMLInputElement;
@@ -337,13 +337,13 @@ export default function RagSelector({ ragType, setRagType, files, setFiles, uplo
                                         style={{ display: "none" }}
                                         onChange={handleFileInputChange}
                                     />
-                                    <Upload className="h-5 w-5 mx-auto text-gray-400 mb-1" />
-                                    <p className="text-sm text-gray-500">添加更多文件</p>
+                                    <Upload className="h-5 w-5 mx-auto text-muted-foreground mb-1" />
+                                    <p className="text-sm text-muted-foreground">添加更多文件</p>
                                 </div>
                             </div>
                         ) : (
                             <div
-                                className={`w-full border-2 border-dashed rounded-xl p-8 text-center transition-all duration-200 ${dragActive ? 'border-blue-400 bg-blue-50' : 'border-gray-300 bg-gray-50'}`}
+                                className={`w-full border-2 border-dashed rounded-xl p-8 text-center transition-all duration-200 ${dragActive ? 'border-primary bg-primary/5' : 'border-border bg-muted/30'}`}
                                 onDragOver={e => { e.preventDefault(); setDragActive(true); }}
                                 onDragLeave={e => { e.preventDefault(); setDragActive(false); }}
                                 onDrop={e => {
@@ -363,16 +363,16 @@ export default function RagSelector({ ragType, setRagType, files, setFiles, uplo
                                     style={{ display: "none" }}
                                     onChange={handleFileInputChange} // Ensure this uses the logging function
                                 />
-                                <div className="flex flex-col items-center text-gray-700">
-                                    <Upload className="h-10 w-10 text-gray-400 mb-2" />
+                                <div className="flex flex-col items-center text-foreground">
+                                    <Upload className="h-10 w-10 text-muted-foreground mb-2" />
                                     <p className="font-medium">拖拽文件到此区域或点击选择文件</p>
-                                    <p className="text-sm text-gray-500 mt-1">支持 PDF、DOCX、TXT 文件</p>
+                                    <p className="text-sm text-muted-foreground mt-1">支持 PDF、DOCX、TXT 文件</p>
                                 </div>
                             </div>
                         )}
                     </div>
                 ) : (
-                    <div className="text-center text-gray-500 p-4 border border-dashed rounded-lg">
+                    <div className="text-center text-muted-foreground p-4 border border-dashed border-border rounded-lg">
                         请先选择上方的 RAG 模式以启用文件上传
                     </div>
                 )}

@@ -10,22 +10,22 @@
   animation: fade-in 0.8s cubic-bezier(0.22, 1, 0.36, 1) 0.1s both;
 }
 
-/* 上传区 hover 动效 */
+/* 上传区 hover 动效 - 主题适配版本 */
 .upload-drop-area {
   transition: border-color 0.3s, background 0.3s;
 }
 .upload-drop-area:hover, .upload-drop-area:focus, .upload-drop-area-active {
-  border-color: #6366f1;
-  background: #f5f3ff;
+  border-color: hsl(var(--primary));
+  background: hsl(var(--primary) / 0.05);
 }
 
-/* 上传按钮动效 */
+/* 上传按钮动效 - 主题适配版本 */
 .upload-btn {
   transition: background 0.3s, box-shadow 0.3s, transform 0.2s;
 }
 .upload-btn:active {
   transform: scale(0.96);
-  box-shadow: 0 2px 8px rgba(99,102,241,0.12);
+  box-shadow: 0 2px 8px hsl(var(--primary) / 0.12);
 }
 
 :root {
@@ -99,5 +99,22 @@
     }
     body {
         @apply bg-background text-foreground;
+    }
+
+    /* 主题切换过渡动画 */
+    html {
+        transition: background-color 0.3s ease, color 0.3s ease;
+    }
+
+    /* 为所有使用主题变量的元素添加过渡效果 */
+    * {
+        transition-property: background-color, border-color, color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter;
+        transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+        transition-duration: 150ms;
+    }
+
+    /* 避免某些元素的过渡效果 */
+    *:where([class~="no-transition"], [class~="no-transition"] *) {
+        transition: none !important;
     }
 }
